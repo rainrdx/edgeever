@@ -19,6 +19,7 @@
     "db:migrate:remote": "bun scripts/run-wrangler.mjs d1 migrations apply DB --remote",
     "auth:hash": "bun scripts/hash-password.mjs",
     "cli": "bun scripts/edgeever.mjs",
+    "mcp:stdio": "bun scripts/edgeever-mcp-stdio.mjs",
     "deploy": "bun run build && bun run db:migrate:remote && bun scripts/run-wrangler.mjs deploy",
     "deploy:tianma": "EDGE_EVER_INSTANCE=tianma bun run deploy",
     "deploy:demo": "EDGE_EVER_INSTANCE=demo bun run deploy",

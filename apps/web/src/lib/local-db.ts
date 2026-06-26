@@ -9,13 +9,39 @@ export type LocalDraft = {
   updatedAt: string;
 };
 
+export type MemoUpdateSyncPayload = {
+  memoId: string;
+  expectedRevision: number;
+  title: string;
+  contentJson: TiptapDoc;
+  tags: string[];
+};
+
+export type SyncQueueItem = {
+  id: string;
+  kind: "memo.update";
+  memoId: string;
+  status: "pending" | "syncing" | "conflict" | "error";
+  payload: MemoUpdateSyncPayload;
+  attemptCount: number;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 class EdgeEverLocalDb extends Dexie {
   drafts!: Table<LocalDraft, string>;
+  syncQueue!: Table<SyncQueueItem, string>;
 
   constructor() {
     super("edgeever-local");
     this.version(1).stores({
       drafts: "memoId, updatedAt",
+    });
+    this.version(2).stores({
+      drafts: "memoId, updatedAt",
+      syncQueue: "id, memoId, status, updatedAt, nextAttemptAt",
     });
   }
 }

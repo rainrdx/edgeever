@@ -1,0 +1,1463 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EdgeEver API",
+    "version": "0.1.0",
+    "description": "REST API for EdgeEver notebooks, memos, resources, API tokens, and Agent integrations."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "cookieAuth": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Runtime health",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "runtime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["ok", "name", "runtime"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "summary": "OpenAPI schema",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 schema"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "summary": "Read interactive session",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Current session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "summary": "Create interactive session",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "summary": "Revoke interactive session",
+        "responses": {
+          "200": {
+            "description": "Logout result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notebooks": {
+      "get": {
+        "summary": "List notebooks",
+        "responses": {
+          "200": {
+            "description": "Notebook list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notebooks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notebook"
+                      }
+                    }
+                  },
+                  "required": ["notebooks"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create notebook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotebookCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/NotebookResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/notebooks/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/NotebookId"
+        }
+      ],
+      "patch": {
+        "summary": "Update notebook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotebookUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/NotebookResponse"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Soft-delete empty notebook",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Ok"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/tags": {
+      "get": {
+        "summary": "List tag summaries",
+        "responses": {
+          "200": {
+            "description": "Tag summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TagSummary"
+                      }
+                    }
+                  },
+                  "required": ["tags"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tags/{tag}": {
+      "parameters": [
+        {
+          "name": "tag",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Rename tag across active memos",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagRenameInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/UpdatedCount"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove tag across active memos",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/UpdatedCount"
+          }
+        }
+      }
+    },
+    "/api/v1/api-tokens": {
+      "get": {
+        "summary": "List API tokens",
+        "responses": {
+          "200": {
+            "description": "API token list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apiTokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiToken"
+                      }
+                    },
+                    "availableScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["apiTokens", "availableScopes"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create API token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created token; plaintext token is shown once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedApiToken"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-tokens/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ApiTokenId"
+        }
+      ],
+      "delete": {
+        "summary": "Revoke API token",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Ok"
+          }
+        }
+      }
+    },
+    "/api/v1/memos": {
+      "get": {
+        "summary": "List or search memos",
+        "parameters": [
+          {
+            "name": "notebookId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trash",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["1"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 80
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memo summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "memos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MemoSummary"
+                      }
+                    }
+                  },
+                  "required": ["memos"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create memo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/MemoResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/batch/move": {
+      "post": {
+        "summary": "Move memos to notebook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveMemosInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Move result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "moved": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["ok", "moved"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/memos/merge": {
+      "post": {
+        "summary": "Merge memos",
+        "description": "Creates a new memo, joins source Markdown with separators, soft-deletes source memos, and re-points resources to the new memo.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeMemosInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/MemoResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/MemoId"
+        }
+      ],
+      "get": {
+        "summary": "Get memo detail",
+        "parameters": [
+          {
+            "name": "includeDeleted",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["1"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoResponse"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update memo",
+        "description": "Use expectedRevision for optimistic concurrency. A mismatch returns revision_conflict.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoResponse"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Soft-delete or permanently delete memo",
+        "parameters": [
+          {
+            "name": "permanent",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["1"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Ok"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}/restore": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/MemoId"
+        }
+      ],
+      "post": {
+        "summary": "Restore memo from trash",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}/revisions": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/MemoId"
+        }
+      ],
+      "get": {
+        "summary": "List memo revisions",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memo revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revisions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MemoRevision"
+                      }
+                    }
+                  },
+                  "required": ["revisions"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}/revisions/{revisionId}/restore": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/MemoId"
+        },
+        {
+          "name": "revisionId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Restore a memo revision",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoResponse"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}/resources": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/MemoId"
+        }
+      ],
+      "post": {
+        "summary": "Upload image resource for memo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Uploaded resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resource": {
+                      "$ref": "#/components/schemas/Resource"
+                    }
+                  },
+                  "required": ["resource"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources": {
+      "get": {
+        "summary": "List resources and storage summary",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resources": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceListItem"
+                      }
+                    },
+                    "summary": {
+                      "$ref": "#/components/schemas/ResourceStorageSummary"
+                    }
+                  },
+                  "required": ["resources", "summary"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{id}/blob": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read resource bytes",
+        "responses": {
+          "200": {
+            "description": "Resource blob"
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "get": {
+        "summary": "Describe MCP endpoint",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "MCP endpoint metadata"
+          }
+        }
+      },
+      "post": {
+        "summary": "MCP Streamable HTTP JSON-RPC endpoint",
+        "description": "Supports initialize, tools/list, tools/call, notifications/initialized, and batch requests.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/JsonRpcRequest"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/JsonRpcRequest"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC response"
+          },
+          "204": {
+            "description": "Notification accepted"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "edgeever_session"
+      }
+    },
+    "parameters": {
+      "NotebookId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "MemoId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ApiTokenId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Ok": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Ok"
+            }
+          }
+        }
+      },
+      "Error": {
+        "description": "API error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "NotebookResponse": {
+        "description": "Notebook response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "notebook": {
+                  "$ref": "#/components/schemas/Notebook"
+                }
+              },
+              "required": ["notebook"]
+            }
+          }
+        }
+      },
+      "MemoResponse": {
+        "description": "Memo response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "memo": {
+                  "$ref": "#/components/schemas/MemoDetail"
+                }
+              },
+              "required": ["memo"]
+            }
+          }
+        }
+      },
+      "UpdatedCount": {
+        "description": "Updated count",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean"
+                },
+                "updated": {
+                  "type": "integer"
+                }
+              },
+              "required": ["ok", "updated"]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": ["ok"]
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {}
+            },
+            "required": ["code", "message"]
+          }
+        },
+        "required": ["error"]
+      },
+      "AuthSession": {
+        "type": "object",
+        "properties": {
+          "authRequired": {
+            "type": "boolean"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "user": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuthUser"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["authRequired", "authenticated", "user"]
+      },
+      "AuthUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["id", "username", "displayName"]
+      },
+      "LoginInput": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": ["username", "password"]
+      },
+      "Notebook": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": ["string", "null"]
+          },
+          "icon": {
+            "type": ["string", "null"]
+          },
+          "color": {
+            "type": ["string", "null"]
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "parentId", "name", "slug", "icon", "color", "sortOrder", "createdAt", "updatedAt"]
+      },
+      "NotebookCreateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "parentId": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["name"]
+      },
+      "NotebookUpdateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "parentId": {
+            "type": ["string", "null"]
+          },
+          "sortOrder": {
+            "type": "integer"
+          }
+        }
+      },
+      "MemoSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "notebookId": {
+            "type": "string"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isPinned": {
+            "type": "boolean"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isDeleted": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "notebookId", "title", "excerpt", "tags", "isPinned", "isArchived", "isDeleted", "revision", "createdAt", "updatedAt", "deletedAt"]
+      },
+      "MemoDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MemoSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "contentJson": {
+                "$ref": "#/components/schemas/TiptapDoc"
+              },
+              "contentMarkdown": {
+                "type": "string"
+              },
+              "contentText": {
+                "type": "string"
+              },
+              "sourceMemoIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "mergeSourceCount": {
+                "type": "integer"
+              },
+              "mergedIntoMemoId": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["contentJson", "contentMarkdown", "contentText", "sourceMemoIds", "mergeSourceCount", "mergedIntoMemoId"]
+          }
+        ]
+      },
+      "MemoCreateInput": {
+        "type": "object",
+        "properties": {
+          "notebookId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "contentMarkdown": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["notebookId"]
+      },
+      "MemoUpdateInput": {
+        "type": "object",
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notebookId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "contentJson": {
+            "$ref": "#/components/schemas/TiptapDoc"
+          },
+          "contentMarkdown": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MoveMemosInput": {
+        "type": "object",
+        "properties": {
+          "memoIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            }
+          },
+          "notebookId": {
+            "type": "string"
+          }
+        },
+        "required": ["memoIds", "notebookId"]
+      },
+      "MergeMemosInput": {
+        "type": "object",
+        "properties": {
+          "memoIds": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 50,
+            "items": {
+              "type": "string"
+            }
+          },
+          "notebookId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "required": ["memoIds"]
+      },
+      "MemoRevision": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memoId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "contentMarkdown": {
+            "type": "string"
+          },
+          "contentText": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "memoId", "revision", "title", "tags", "contentMarkdown", "contentText", "contentHash", "createdBy", "createdAt"]
+      },
+      "TagSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "memoCount": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["name", "memoCount", "updatedAt"]
+      },
+      "TagRenameInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": ["name"]
+      },
+      "ApiToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastUsedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "isRevoked": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "name", "scopes", "lastUsedAt", "expiresAt", "isRevoked", "createdAt"]
+      },
+      "ApiTokenCreateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "scopes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["name", "scopes"]
+      },
+      "CreatedApiToken": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "apiToken": {
+            "$ref": "#/components/schemas/ApiToken"
+          }
+        },
+        "required": ["token", "apiToken"]
+      },
+      "Resource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memoId": {
+            "type": "string"
+          },
+          "originalMemoId": {
+            "type": ["string", "null"]
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["image", "attachment"]
+          },
+          "mimeType": {
+            "type": ["string", "null"]
+          },
+          "filename": {
+            "type": ["string", "null"]
+          },
+          "byteSize": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": ["string", "null"]
+          },
+          "width": {
+            "type": ["integer", "null"]
+          },
+          "height": {
+            "type": ["integer", "null"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "memoId", "originalMemoId", "kind", "mimeType", "filename", "byteSize", "sha256", "width", "height", "createdAt", "updatedAt", "url"]
+      },
+      "ResourceListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Resource"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "memoTitle": {
+                "type": ["string", "null"]
+              },
+              "memoExcerpt": {
+                "type": ["string", "null"]
+              },
+              "memoDeleted": {
+                "type": "boolean"
+              }
+            },
+            "required": ["memoTitle", "memoExcerpt", "memoDeleted"]
+          }
+        ]
+      },
+      "ResourceStorageSummary": {
+        "type": "object",
+        "properties": {
+          "totalCount": {
+            "type": "integer"
+          },
+          "totalBytes": {
+            "type": "integer"
+          },
+          "imageCount": {
+            "type": "integer"
+          },
+          "attachmentCount": {
+            "type": "integer"
+          }
+        },
+        "required": ["totalCount", "totalBytes", "imageCount", "attachmentCount"]
+      },
+      "TiptapDoc": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "doc"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": ["type", "content"]
+      },
+      "JsonRpcRequest": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "const": "2.0"
+          },
+          "id": {
+            "type": ["string", "number", "null"]
+          },
+          "method": {
+            "type": "string"
+          },
+          "params": {}
+        },
+        "required": ["jsonrpc", "method"]
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import {
   createExcerpt,
+  DEFAULT_MEMO_TITLE,
   docToMarkdown,
   docToText,
   emptyDoc,
@@ -31,6 +32,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { cors } from "hono/cors";
+import openApiSpec from "../../../docs/openapi.json";
 
 type Bindings = {
   DB: D1Database;
@@ -234,6 +236,8 @@ app.get("/api/health", (c) =>
     runtime: "cloudflare-workers",
   })
 );
+
+app.get("/api/openapi.json", (c) => c.json(openApiSpec));
 
 app.get("/api/v1/auth/session", async (c) => {
   const authRequired = await isAuthRequired(c.env);
@@ -655,8 +659,8 @@ app.post("/api/v1/memos", zValidator("json", MemoCreateSchema), async (c) => {
   const contentMarkdown = input.contentMarkdown ?? "";
   const contentJson = markdownToDoc(contentMarkdown);
   const contentText = docToText(contentJson);
-  const title = input.title || deriveTitle(contentText);
-  const excerpt = createExcerpt(contentText || title || "");
+  const title = normalizeMemoTitle(input.title);
+  const excerpt = createExcerpt(contentText);
   const contentHash = await sha256(contentMarkdown + JSON.stringify(contentJson));
   const id = createId("memo");
   const now = isoNow();
@@ -787,8 +791,8 @@ app.post("/api/v1/memos/:id/revisions/:revisionId/restore", async (c) => {
   const contentJson = parseDoc(revision.content_json);
   const contentMarkdown = revision.content_markdown || docToMarkdown(contentJson);
   const contentText = revision.content_text || docToText(contentJson);
-  const title = revision.title ?? deriveTitle(contentText);
-  const excerpt = createExcerpt(contentText || title || "");
+  const title = normalizeMemoTitle(revision.title);
+  const excerpt = createExcerpt(contentText);
   const contentHash = await sha256(contentMarkdown + JSON.stringify(contentJson));
   const nextRevision = current.revision + 1;
   const now = isoNow();
@@ -1039,9 +1043,10 @@ app.patch("/api/v1/memos/:id", zValidator("json", MemoUpdateSchema), async (c) =
   const contentMarkdown =
     input.contentMarkdown !== undefined ? input.contentMarkdown : docToMarkdown(contentJson);
   const contentText = docToText(contentJson);
-  const title = input.title ?? current.title ?? deriveTitle(contentText);
+  const title =
+    input.title !== undefined ? normalizeMemoTitle(input.title) : normalizeMemoTitle(current.title);
   const tags = input.tags === undefined ? parseJsonArray(current.tags_json) : normalizeTags(input.tags);
-  const excerpt = createExcerpt(contentText || title || "");
+  const excerpt = createExcerpt(contentText);
   const notebookId = input.notebookId ?? current.notebook_id;
   const nextRevision = current.revision + 1;
   const contentHash = await sha256(contentMarkdown + JSON.stringify(contentJson));
@@ -2629,8 +2634,8 @@ const createMemoRecord = async (
   const contentMarkdown = input.contentMarkdown ?? "";
   const contentJson = markdownToDoc(contentMarkdown);
   const contentText = docToText(contentJson);
-  const title = input.title || deriveTitle(contentText);
-  const excerpt = createExcerpt(contentText || title || "");
+  const title = normalizeMemoTitle(input.title);
+  const excerpt = createExcerpt(contentText);
   const contentHash = await sha256(contentMarkdown + JSON.stringify(contentJson));
   const id = createId("memo");
   const now = isoNow();
@@ -2698,9 +2703,10 @@ const updateMemoRecord = async (
   const contentMarkdown =
     input.contentMarkdown !== undefined ? input.contentMarkdown : docToMarkdown(contentJson);
   const contentText = docToText(contentJson);
-  const title = input.title ?? current.title ?? deriveTitle(contentText);
+  const title =
+    input.title !== undefined ? normalizeMemoTitle(input.title) : normalizeMemoTitle(current.title);
   const tags = input.tags === undefined ? parseJsonArray(current.tags_json) : normalizeTags(input.tags);
-  const excerpt = createExcerpt(contentText || title || "");
+  const excerpt = createExcerpt(contentText);
   const notebookId = input.notebookId ?? current.notebook_id;
   const nextRevision = current.revision + 1;
   const contentHash = await sha256(contentMarkdown + JSON.stringify(contentJson));
@@ -2920,9 +2926,9 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
 
-const deriveTitle = (text: string) => {
-  const title = text.trim().split(/\s+/).slice(0, 10).join(" ");
-  return title || "Untitled memo";
+const normalizeMemoTitle = (value: string | null | undefined) => {
+  const title = value?.trim();
+  return title || DEFAULT_MEMO_TITLE;
 };
 
 const clampNumber = (value: number, min: number, max: number) => {

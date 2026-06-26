@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MEMO_TITLE,
   docToMarkdown,
   type ApiToken,
   type AuthSession,
@@ -20,7 +21,10 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
+  CheckCircle2,
   Code2,
+  AlertTriangle,
+  CloudOff,
   ExternalLink,
   File as FileIcon,
   FilePlus2,
@@ -44,6 +48,7 @@ import {
   Plus,
   Quote,
   Redo2,
+  RefreshCw,
   RotateCcw,
   Save,
   Search,
@@ -69,7 +74,16 @@ import {
 } from "react";
 import { api } from "@/lib/api";
 import { compressImageForUpload } from "@/lib/image-compression";
-import { localDb } from "@/lib/local-db";
+import { localDb, type MemoUpdateSyncPayload } from "@/lib/local-db";
+import {
+  emptySyncQueueSummary,
+  getMemoUpdateQueueId,
+  observeSyncQueue,
+  queueMemoUpdate,
+  shouldQueueMemoSaveError,
+  syncQueuedChanges,
+  type SyncQueueSummary,
+} from "@/lib/sync-queue";
 import { buildNotebookTree, cn, formatDateTime, parseTagsText, type NotebookNode } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -169,6 +183,32 @@ const WorkspaceApp = ({
   const [tagsOpen, setTagsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [syncSummary, setSyncSummary] = useState<SyncQueueSummary>(emptySyncQueueSummary);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const [isSyncingQueuedChanges, setIsSyncingQueuedChanges] = useState(false);
+
+  const runQueuedSync = useCallback(async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setIsOnline(false);
+      return;
+    }
+
+    setIsSyncingQueuedChanges(true);
+
+    try {
+      await syncQueuedChanges({
+        onSynced: async (memo) => {
+          queryClient.setQueryData(["memo", memo.id], { memo });
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["memos"] }),
+            queryClient.invalidateQueries({ queryKey: ["memo", memo.id] }),
+          ]);
+        },
+      });
+    } finally {
+      setIsSyncingQueuedChanges(false);
+    }
+  }, [queryClient]);
 
   const notebooksQuery = useQuery({
     queryKey: ["notebooks"],
@@ -210,6 +250,40 @@ const WorkspaceApp = ({
   useEffect(() => {
     writeImageCompressionPreference(imageCompressionEnabled);
   }, [imageCompressionEnabled]);
+
+  useEffect(() => observeSyncQueue(setSyncSummary), []);
+
+  useEffect(() => {
+    const updateOnlineState = () => {
+      const online = navigator.onLine;
+      setIsOnline(online);
+
+      if (online) {
+        void runQueuedSync();
+      }
+    };
+
+    window.addEventListener("online", updateOnlineState);
+    window.addEventListener("offline", updateOnlineState);
+    updateOnlineState();
+
+    return () => {
+      window.removeEventListener("online", updateOnlineState);
+      window.removeEventListener("offline", updateOnlineState);
+    };
+  }, [runQueuedSync]);
+
+  useEffect(() => {
+    if (syncSummary.total === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void runQueuedSync();
+    }, 15_000);
+
+    return () => window.clearInterval(timer);
+  }, [runQueuedSync, syncSummary.total]);
 
   const memosQuery = useQuery({
     queryKey: ["memos", memoView, selectedNotebookId, search],
@@ -370,7 +444,7 @@ const WorkspaceApp = ({
 
     createMemoMutation.mutate({
       notebookId: selectedNotebookId,
-      title: "Untitled memo",
+      title: DEFAULT_MEMO_TITLE,
       contentMarkdown: "",
       tags: [],
     });
@@ -453,6 +527,10 @@ const WorkspaceApp = ({
             isLoggingOut={isLoggingOut}
             imageCompressionEnabled={imageCompressionEnabled}
             onImageCompressionChange={setImageCompressionEnabled}
+            syncSummary={syncSummary}
+            isOnline={isOnline}
+            isSyncingQueuedChanges={isSyncingQueuedChanges}
+            onSyncQueuedChanges={() => void runQueuedSync()}
             onOpenAssets={() => setAssetsOpen(true)}
             onOpenTags={() => setTagsOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
@@ -699,6 +777,10 @@ const NotebookPane = ({
   isLoggingOut,
   imageCompressionEnabled,
   onImageCompressionChange,
+  syncSummary,
+  isOnline,
+  isSyncingQueuedChanges,
+  onSyncQueuedChanges,
   onOpenAssets,
   onOpenTags,
   onOpenSettings,
@@ -719,6 +801,10 @@ const NotebookPane = ({
   isLoggingOut: boolean;
   imageCompressionEnabled: boolean;
   onImageCompressionChange: (enabled: boolean) => void;
+  syncSummary: SyncQueueSummary;
+  isOnline: boolean;
+  isSyncingQueuedChanges: boolean;
+  onSyncQueuedChanges: () => void;
   onOpenAssets: () => void;
   onOpenTags: () => void;
   onOpenSettings: () => void;
@@ -772,6 +858,12 @@ const NotebookPane = ({
       </div>
 
       <footer className="border-t border-emerald-100 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+        <SyncStatusBar
+          summary={syncSummary}
+          isOnline={isOnline}
+          isSyncing={isSyncingQueuedChanges}
+          onSyncNow={onSyncQueuedChanges}
+        />
         <label className="mb-3 flex min-h-10 items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50/70 px-3 py-2">
           <span className="min-w-0 text-sm font-medium text-slate-700">压缩图片</span>
           <input
@@ -804,6 +896,78 @@ const NotebookPane = ({
       </footer>
     </div>
   );
+};
+
+const SyncStatusBar = ({
+  summary,
+  isOnline,
+  isSyncing,
+  onSyncNow,
+}: {
+  summary: SyncQueueSummary;
+  isOnline: boolean;
+  isSyncing: boolean;
+  onSyncNow: () => void;
+}) => {
+  const hasQueuedWork = summary.total > 0;
+  const label = getSyncStatusLabel(summary, isOnline, isSyncing);
+  const statusClassName = !isOnline
+    ? "border-slate-200 bg-slate-50 text-slate-600"
+    : summary.conflict > 0
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : hasQueuedWork
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+        : "border-emerald-100 bg-white text-slate-500";
+
+  return (
+    <div className={cn("mb-3 flex min-h-10 items-center gap-2 rounded-md border px-3 py-2", statusClassName)}>
+      {!isOnline ? (
+        <CloudOff className="h-4 w-4 shrink-0" />
+      ) : summary.conflict > 0 ? (
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+      ) : hasQueuedWork || isSyncing ? (
+        <RefreshCw className={cn("h-4 w-4 shrink-0", isSyncing && "animate-spin")} />
+      ) : (
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1 truncate text-xs font-medium">{label}</span>
+      {hasQueuedWork ? (
+        <button
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-white/70 disabled:opacity-50"
+          type="button"
+          title="立即同步"
+          disabled={!isOnline || isSyncing}
+          onClick={onSyncNow}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+    </div>
+  );
+};
+
+const getSyncStatusLabel = (summary: SyncQueueSummary, isOnline: boolean, isSyncing: boolean) => {
+  if (!isOnline) {
+    return summary.total > 0 ? `离线，${summary.total} 项待同步` : "离线";
+  }
+
+  if (isSyncing || summary.syncing > 0) {
+    return "同步中";
+  }
+
+  if (summary.conflict > 0) {
+    return `${summary.conflict} 项同步冲突`;
+  }
+
+  if (summary.error > 0) {
+    return `${summary.error} 项等待重试`;
+  }
+
+  if (summary.pending > 0) {
+    return `${summary.pending} 项待同步`;
+  }
+
+  return "已同步";
 };
 
 const NotebookTreeItem = ({
@@ -991,6 +1155,7 @@ const MemoListPane = ({
   onMoveSelectedMemos: (notebookId: string) => void;
 }) => {
   const [moveTargetNotebookId, setMoveTargetNotebookId] = useState(notebook?.id ?? notebooks[0]?.id ?? "");
+  const memoGroups = useMemo(() => groupMemosByMonth(memos), [memos]);
 
   useEffect(() => {
     if (notebook?.id) {
@@ -999,123 +1164,157 @@ const MemoListPane = ({
   }, [notebook?.id]);
 
   return (
-  <div className="relative flex h-full min-h-0 flex-col">
-    <header className="border-b border-emerald-100 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:py-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button className="lg:hidden" size="icon" variant="ghost" title="打开笔记本" onClick={onBackToNotebooks}>
-            <PanelLeft className="h-4 w-4" />
-          </Button>
-          <div className="min-w-0">
-            <div className="truncate text-lg font-semibold text-slate-950 lg:text-sm">
-              {view === "trash" ? "回收站" : notebook?.name ?? "全部笔记"}
-            </div>
-            <div className="text-xs text-slate-500">
-              {memos.length} {view === "trash" ? "trashed" : "memos"}
+    <div className="relative flex h-full min-h-0 flex-col">
+      <header className="border-b border-emerald-100 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:py-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button className="lg:hidden" size="icon" variant="ghost" title="打开笔记本" onClick={onBackToNotebooks}>
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+            <div className="min-w-0">
+              <div className="truncate text-lg font-semibold text-slate-950 lg:text-sm">
+                {view === "trash" ? "回收站" : notebook?.name ?? "全部笔记"}
+              </div>
+              <div className="text-xs text-slate-500">
+                {memos.length} {view === "trash" ? "条已删除" : "条笔记"}
+              </div>
             </div>
           </div>
+          <Button
+            className="hidden lg:inline-flex"
+            size="icon"
+            variant="solid"
+            title="新建笔记"
+            onClick={onCreateMemo}
+            disabled={!notebook || isCreating || view === "trash"}
+          >
+            <FilePlus2 className="h-4 w-4" />
+          </Button>
         </div>
-        <Button
-          className="hidden lg:inline-flex"
-          size="icon"
-          variant="solid"
+        <label className="flex h-9 items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/70 px-3 text-sm text-slate-500">
+          <Search className="h-4 w-4" />
+          <input
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
+            placeholder="搜索笔记"
+          />
+        </label>
+      </header>
+
+      <div className="relative min-h-0 flex-1 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {selectedMemoIds.size > 0 ? (
+          <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-100 bg-white px-3 py-2 shadow-panel">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <CheckSquare className="h-4 w-4 text-emerald-700" />
+              {selectedMemoIds.size} selected
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <select
+                className="h-8 max-w-40 rounded-md border border-emerald-100 bg-emerald-50/70 px-2 text-xs text-emerald-900 outline-none disabled:opacity-50"
+                value={moveTargetNotebookId}
+                disabled={view === "trash" || notebooks.length === 0 || isMoving}
+                onChange={(event) => setMoveTargetNotebookId(event.target.value)}
+                title="移动到笔记本"
+              >
+                {notebooks.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="soft"
+                onClick={() => onMoveSelectedMemos(moveTargetNotebookId)}
+                disabled={!moveTargetNotebookId || isMoving || view === "trash"}
+              >
+                <Folder className="h-4 w-4" />
+                移动
+              </Button>
+              <Button
+                size="sm"
+                variant="solid"
+                onClick={onMerge}
+                disabled={selectedMemoIds.size < 2 || isMerging || view === "trash"}
+              >
+                <Merge className="h-4 w-4" />
+                合并
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {isLoading ? (
+          <div className="px-2 py-4 text-sm text-slate-500">加载中</div>
+        ) : memos.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+            {view === "trash" ? "回收站为空" : "暂无笔记"}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-sm border-y border-slate-200 bg-white">
+            {memoGroups.map((group) => (
+              <section key={group.key}>
+                <div className="sticky top-0 z-[4] flex h-9 items-center justify-between border-b border-slate-200 bg-white/95 px-4 text-sm font-semibold text-slate-500 backdrop-blur">
+                  <span>{group.label}</span>
+                  <span>{group.items.length}</span>
+                </div>
+                <div>
+                  {group.items.map((memo) => (
+                    <MemoCard
+                      key={memo.id}
+                      memo={memo}
+                      selected={memo.id === selectedMemoId}
+                      checked={selectedMemoIds.has(memo.id)}
+                      multiSelectKeyDown={multiSelectKeyDown}
+                      onOpen={() => onOpenMemo(memo.id)}
+                      onToggle={() => onToggleMemo(memo.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+      {selectedMemoIds.size === 0 ? (
+        <button
+          className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 flex h-14 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-100 px-5 text-sm font-semibold text-emerald-950 shadow-panel transition hover:bg-emerald-200 disabled:opacity-50 lg:hidden"
           title="新建笔记"
           onClick={onCreateMemo}
-          disabled={!notebook || isCreating || view === "trash"}
+          disabled={!notebook || isCreating}
+          hidden={view === "trash"}
         >
-          <FilePlus2 className="h-4 w-4" />
-        </Button>
-      </div>
-      <label className="flex h-9 items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/70 px-3 text-sm text-slate-500">
-        <Search className="h-4 w-4" />
-        <input
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
-          placeholder="Search memos"
-        />
-      </label>
-    </header>
-
-    <div className="relative min-h-0 flex-1 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      {selectedMemoIds.size > 0 ? (
-        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-100 bg-white px-3 py-2 shadow-panel">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <CheckSquare className="h-4 w-4 text-emerald-700" />
-            {selectedMemoIds.size} selected
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <select
-              className="h-8 max-w-40 rounded-md border border-emerald-100 bg-emerald-50/70 px-2 text-xs text-emerald-900 outline-none disabled:opacity-50"
-              value={moveTargetNotebookId}
-              disabled={view === "trash" || notebooks.length === 0 || isMoving}
-              onChange={(event) => setMoveTargetNotebookId(event.target.value)}
-              title="移动到笔记本"
-            >
-              {notebooks.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <Button
-              size="sm"
-              variant="soft"
-              onClick={() => onMoveSelectedMemos(moveTargetNotebookId)}
-              disabled={!moveTargetNotebookId || isMoving || view === "trash"}
-            >
-              <Folder className="h-4 w-4" />
-              移动
-            </Button>
-            <Button
-              size="sm"
-              variant="solid"
-              onClick={onMerge}
-              disabled={selectedMemoIds.size < 2 || isMerging || view === "trash"}
-            >
-              <Merge className="h-4 w-4" />
-              合并
-            </Button>
-          </div>
-        </div>
+          <FilePlus2 className="h-5 w-5" />
+          新建
+        </button>
       ) : null}
-
-      {isLoading ? (
-        <div className="px-2 py-4 text-sm text-slate-500">加载中</div>
-      ) : memos.length === 0 ? (
-        <div className="rounded-md border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
-          {view === "trash" ? "回收站为空" : "No memos"}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {memos.map((memo) => (
-            <MemoCard
-              key={memo.id}
-              memo={memo}
-              selected={memo.id === selectedMemoId}
-              checked={selectedMemoIds.has(memo.id)}
-              multiSelectKeyDown={multiSelectKeyDown}
-              onOpen={() => onOpenMemo(memo.id)}
-              onToggle={() => onToggleMemo(memo.id)}
-            />
-          ))}
-        </div>
-      )}
     </div>
-    {selectedMemoIds.size === 0 ? (
-      <button
-        className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 flex h-14 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-100 px-5 text-sm font-semibold text-emerald-950 shadow-panel transition hover:bg-emerald-200 disabled:opacity-50 lg:hidden"
-        title="新建笔记"
-        onClick={onCreateMemo}
-        disabled={!notebook || isCreating}
-        hidden={view === "trash"}
-      >
-        <FilePlus2 className="h-5 w-5" />
-        新建
-      </button>
-    ) : null}
-  </div>
   );
+};
+
+const groupMemosByMonth = (memos: MemoSummary[]) => {
+  const groups: Array<{ key: string; label: string; items: MemoSummary[] }> = [];
+
+  for (const memo of memos) {
+    const date = new Date(memo.updatedAt);
+    const key = Number.isNaN(date.getTime())
+      ? "unknown"
+      : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const label = Number.isNaN(date.getTime())
+      ? "未知时间"
+      : new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(date);
+    const current = groups[groups.length - 1];
+
+    if (current?.key === key) {
+      current.items.push(memo);
+      continue;
+    }
+
+    groups.push({ key, label, items: [memo] });
+  }
+
+  return groups;
 };
 
 const MemoCard = ({
@@ -1134,6 +1333,8 @@ const MemoCard = ({
   onToggle: () => void;
 }) => {
   const handledModifierPointerRef = useRef(false);
+  const memoTitle = getMemoTitle(memo.title);
+  const memoExcerpt = memo.excerpt.trim() || "空笔记";
 
   const shouldToggleSelection = (event: MouseEvent<HTMLElement>) =>
     event.ctrlKey || event.metaKey || multiSelectKeyDown;
@@ -1191,32 +1392,31 @@ const MemoCard = ({
   return (
     <article
       className={cn(
-        "rounded-md border bg-white p-3 transition",
-        selected ? "border-emerald-300 shadow-panel" : "border-emerald-100 hover:border-emerald-200",
-        checked && "border-emerald-300 bg-emerald-50/70"
+        "border-b border-slate-200 transition last:border-b-0",
+        selected ? "bg-slate-200" : checked ? "bg-emerald-50/80" : "bg-white hover:bg-slate-50"
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex min-h-[128px] items-start">
         <input
           type="checkbox"
           checked={checked}
           onChange={onToggle}
-          className="mt-1 h-5 w-5 shrink-0 rounded border-emerald-300 text-emerald-600"
-          aria-label={`选择 ${memo.title ?? memo.excerpt}`}
+          className="ml-4 mt-5 h-4 w-4 shrink-0 rounded border-slate-300 text-emerald-600"
+          aria-label={`选择 ${memoTitle}`}
         />
         <button
-          className={cn("min-w-0 flex-1 text-left", multiSelectKeyDown && "cursor-copy")}
+          className={cn("min-w-0 flex-1 px-4 py-4 text-left", multiSelectKeyDown && "cursor-copy")}
           onMouseDown={handleMouseDown}
           onClick={handleClick}
           onContextMenu={handleContextMenu}
           title="Ctrl/Cmd 点击切换选择"
         >
-          <div className="mb-1 truncate text-sm font-semibold text-slate-950">{memo.title || "Untitled memo"}</div>
-          <div className="line-clamp-2 min-h-[40px] text-sm leading-5 text-slate-600">{memo.excerpt || "Empty memo"}</div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <time className="text-xs text-slate-400">{formatDateTime(memo.updatedAt)}</time>
+          <div className="mb-2 truncate text-base font-semibold leading-6 text-slate-900">{memoTitle}</div>
+          <div className="line-clamp-2 min-h-10 text-[15px] leading-5 text-slate-600">{memoExcerpt}</div>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <time className="text-sm text-slate-500">{formatMemoPreviewDate(memo.updatedAt)}</time>
             {memo.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+              <span key={tag} className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
                 #{tag}
               </span>
             ))}
@@ -1225,6 +1425,34 @@ const MemoCard = ({
       </div>
     </article>
   );
+};
+
+const getMemoTitle = (title: string | null | undefined) => title?.trim() || DEFAULT_MEMO_TITLE;
+
+const formatMemoPreviewDate = (value: string) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const memoDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+  if (memoDay === today) {
+    return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(date);
+  }
+
+  if (memoDay === today - 24 * 60 * 60 * 1000) {
+    return "昨天";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).format(date);
 };
 
 const SUPPORTED_PASTE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
@@ -1662,7 +1890,7 @@ const RevisionHistoryDialog = ({
               <History className="h-4 w-4 text-emerald-700" />
               版本历史
             </div>
-            <div className="mt-1 truncate text-xs text-slate-500">{memo.title || "Untitled memo"}</div>
+            <div className="mt-1 truncate text-xs text-slate-500">{getMemoTitle(memo.title)}</div>
           </div>
           <Button size="icon" variant="ghost" title="关闭" onClick={onClose}>
             <X className="h-4 w-4" />
@@ -1740,7 +1968,7 @@ const RevisionPreview = ({ title, markdown }: { title: string; markdown: string 
   <div className="min-h-[260px] border-b border-emerald-100 p-4 sm:border-b-0 sm:border-r">
     <div className="mb-3 text-xs font-semibold uppercase text-slate-500">{title}</div>
     <pre className="max-h-[54dvh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-emerald-100 bg-emerald-50/30 p-3 text-sm leading-6 text-slate-700">
-      {markdown || "Empty memo"}
+      {markdown || "空笔记"}
     </pre>
   </div>
 );
@@ -1771,6 +1999,32 @@ const formatRevisionActor = (actor: string) => {
 
   return actor || "system";
 };
+
+const syncStatusToSaveState = (status: "pending" | "syncing" | "conflict" | "error") => {
+  if (status === "conflict") {
+    return "conflict";
+  }
+
+  if (status === "syncing") {
+    return "saving";
+  }
+
+  return "queued";
+};
+
+class MemoSaveRequestError extends Error {
+  originalError: unknown;
+  payload: MemoUpdateSyncPayload;
+  tagsText: string;
+
+  constructor(originalError: unknown, payload: MemoUpdateSyncPayload, tagsText: string) {
+    super(originalError instanceof Error ? originalError.message : "Memo save failed");
+    this.name = "MemoSaveRequestError";
+    this.originalError = originalError;
+    this.payload = payload;
+    this.tagsText = tagsText;
+  }
+}
 
 const EditorToolbar = ({ editor, readOnly }: { editor: Editor | null; readOnly: boolean }) => {
   const disabled = readOnly || !editor;
@@ -2002,7 +2256,7 @@ const EditorPane = ({
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [tagsText, setTagsText] = useState("");
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error" | "conflict">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "queued" | "error" | "conflict">("idle");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [dirtyVersion, setDirtyVersion] = useState(0);
   const [, setEditorStateVersion] = useState(0);
@@ -2181,6 +2435,7 @@ const EditorPane = ({
 
   useEffect(() => {
     const currentEditor = editorRef.current;
+    let cancelled = false;
 
     if (!memo) {
       memoRef.current = null;
@@ -2202,21 +2457,46 @@ const EditorPane = ({
       return;
     }
 
-    hydratingRef.current = true;
-    editingMemoIdRef.current = memo.id;
-    hasUnsavedChangesRef.current = false;
-    setHasUnsavedChanges(false);
-    setSaveState("idle");
-    setTitle(memo.title ?? "");
-    setTagsText(memo.tags.join(", "));
+    void (async () => {
+      const [draft, queuedUpdate] = memo.isDeleted
+        ? [null, null]
+        : await Promise.all([
+            localDb.drafts.get(memo.id),
+            localDb.syncQueue.get(getMemoUpdateQueueId(memo.id)),
+          ]);
 
-    if (currentEditor) {
-      currentEditor.commands.setContent(memo.contentJson);
-    }
+      if (cancelled) {
+        return;
+      }
 
-    window.setTimeout(() => {
-      hydratingRef.current = false;
-    }, 0);
+      const draftUpdatedAt = draft ? Date.parse(draft.updatedAt) : 0;
+      const remoteUpdatedAt = Date.parse(memo.updatedAt);
+      const useDraft = Boolean(draft && (queuedUpdate || draftUpdatedAt >= remoteUpdatedAt));
+      const nextTitle = useDraft && draft ? draft.title : memo.title ?? "";
+      const nextTagsText = useDraft && draft ? draft.tagsText : memo.tags.join(", ");
+      const nextContent = useDraft && draft ? draft.contentJson : memo.contentJson;
+      const nextHasUnsavedChanges = Boolean(useDraft && !queuedUpdate);
+
+      hydratingRef.current = true;
+      editingMemoIdRef.current = memo.id;
+      hasUnsavedChangesRef.current = nextHasUnsavedChanges;
+      setHasUnsavedChanges(nextHasUnsavedChanges);
+      setSaveState(queuedUpdate ? syncStatusToSaveState(queuedUpdate.status) : "idle");
+      setTitle(nextTitle);
+      setTagsText(nextTagsText);
+
+      if (currentEditor) {
+        currentEditor.commands.setContent(nextContent);
+      }
+
+      window.setTimeout(() => {
+        hydratingRef.current = false;
+      }, 0);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isTrashView, memo, editor]);
 
   useEffect(() => {
@@ -2258,12 +2538,26 @@ const EditorPane = ({
         throw new Error("Editor is not ready");
       }
 
-      const data = await api.updateMemo(currentMemo.id, {
+      const contentJson = currentEditor.getJSON() as TiptapDoc;
+      const payload: MemoUpdateSyncPayload = {
+        memoId: currentMemo.id,
         expectedRevision: currentMemo.revision,
         title,
-        contentJson: currentEditor.getJSON() as TiptapDoc,
+        contentJson,
         tags: parseTagsText(tagsText),
-      });
+      };
+      let data;
+
+      try {
+        data = await api.updateMemo(currentMemo.id, {
+          expectedRevision: payload.expectedRevision,
+          title: payload.title,
+          contentJson: payload.contentJson,
+          tags: payload.tags,
+        });
+      } catch (error) {
+        throw new MemoSaveRequestError(error, payload, tagsText);
+      }
 
       return { memo: data.memo, snapshot };
     },
@@ -2286,9 +2580,35 @@ const EditorPane = ({
       setHasUnsavedChanges(true);
       setSaveState("idle");
     },
-    onError: (error) => {
-      const code = error && typeof error === "object" && "code" in error ? String(error.code) : null;
-      setSaveState(code === "revision_conflict" ? "conflict" : "error");
+    onError: async (error) => {
+      const sourceError = error instanceof MemoSaveRequestError ? error.originalError : error;
+      const code =
+        sourceError && typeof sourceError === "object" && "code" in sourceError
+          ? String(sourceError.code)
+          : null;
+
+      if (code === "revision_conflict") {
+        setSaveState("conflict");
+        return;
+      }
+
+      if (error instanceof MemoSaveRequestError && shouldQueueMemoSaveError(sourceError)) {
+        await queueMemoUpdate(error.payload);
+        await localDb.drafts.put({
+          memoId: error.payload.memoId,
+          title: error.payload.title,
+          tagsText: error.tagsText,
+          contentJson: error.payload.contentJson,
+          updatedAt: new Date().toISOString(),
+        });
+
+        hasUnsavedChangesRef.current = false;
+        setHasUnsavedChanges(false);
+        setSaveState("queued");
+        return;
+      }
+
+      setSaveState("error");
     },
   });
 
@@ -2332,13 +2652,15 @@ const EditorPane = ({
       ? "保存中"
       : saveState === "saved"
         ? "已保存"
-        : saveState === "conflict"
-          ? "有冲突"
-          : saveState === "error"
-            ? "保存失败"
-            : hasUnsavedChanges
-              ? "未保存"
-              : "已保存";
+        : saveState === "queued"
+          ? "待同步"
+          : saveState === "conflict"
+            ? "有冲突"
+            : saveState === "error"
+              ? "保存失败"
+              : hasUnsavedChanges
+                ? "未保存"
+                : "已保存";
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -2437,7 +2759,7 @@ const EditorPane = ({
               markDirty();
             }}
             className="block w-full border-0 bg-transparent text-2xl font-semibold leading-tight text-slate-950 outline-none placeholder:text-slate-300 sm:text-3xl"
-            placeholder="Untitled memo"
+            placeholder={DEFAULT_MEMO_TITLE}
           />
           <label className="flex h-8 items-center gap-2 text-sm text-slate-500">
             <Tags className="h-4 w-4" />
