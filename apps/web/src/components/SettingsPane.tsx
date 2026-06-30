@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { EVERNOTE_MIGRATION_PATH } from "@/lib/routes";
-import { Link } from "react-router";
 import { cn, formatDateTime } from "@/lib/utils";
 import { AppConfirmDialog } from "./dialogs/ConfirmDialogs";
 
@@ -76,6 +75,7 @@ interface SettingsPaneProps {
   onLogout: () => void;
   isLoggingOut: boolean;
   authRequired: boolean;
+  onShowGuide?: () => void;
 }
 
 interface ProfileCardProps {
@@ -130,21 +130,40 @@ const PreferenceCard = ({ imageCompressionEnabled, onImageCompressionChange }: P
   </Card>
 );
 
-const EvernoteImportGuideCard = () => (
+interface EvernoteImportGuideCardProps {
+  onShowGuide?: () => void;
+}
+
+const EvernoteImportGuideCard = ({ onShowGuide }: EvernoteImportGuideCardProps) => (
   <Card className="hidden w-full min-w-0 overflow-hidden shadow-none lg:block">
     <CardHeader className="p-4">
       <CardTitle className="flex items-center gap-2 text-sm">
         <UploadCloud className="h-4 w-4 text-emerald-700" />
         导入印象笔记
-        <Button size="sm" variant="outline" className="h-7 bg-white px-2.5 text-xs" type="button" asChild>
-          <Link
-            to={EVERNOTE_MIGRATION_PATH}
-            aria-label="打开印象笔记迁移操作指引"
+        {onShowGuide ? (
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="h-7 bg-white px-2.5 text-xs gap-1" 
+            type="button" 
+            onClick={onShowGuide}
           >
             <HelpCircle className="h-3.5 w-3.5" />
             操作指引
-          </Link>
-        </Button>
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" className="h-7 bg-white px-2.5 text-xs" type="button" asChild>
+            <a
+              href={EVERNOTE_MIGRATION_PATH}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="在新标签页打开印象笔记迁移操作指引"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              操作指引
+            </a>
+          </Button>
+        )}
       </CardTitle>
       <CardDescription className="text-xs leading-4">
         查看从印象笔记迁移到 EdgeEver 的步骤，推荐使用 MCP 与 AI Agent 批量导入。
@@ -575,6 +594,7 @@ export const SettingsPane = ({
   onLogout,
   isLoggingOut,
   authRequired,
+  onShowGuide,
 }: SettingsPaneProps) => {
   const queryClient = useQueryClient();
   const [name, setName] = useState("MCP Agent");
@@ -671,7 +691,7 @@ export const SettingsPane = ({
             imageCompressionEnabled={imageCompressionEnabled}
             onImageCompressionChange={onImageCompressionChange}
           />
-          <EvernoteImportGuideCard />
+          <EvernoteImportGuideCard onShowGuide={onShowGuide} />
           <TokenCard
             name={name}
             onNameChange={setName}

@@ -93,6 +93,9 @@ const EditorPane = lazy(() => import("./EditorPane").then((module) => ({ default
 const AssetsPane = lazy(() => import("./AssetsPane").then((module) => ({ default: module.AssetsPane })));
 const SettingsPane = lazy(() => import("./SettingsPane").then((module) => ({ default: module.SettingsPane })));
 const NotebookPane = lazy(() => import("./NotebookPane").then((module) => ({ default: module.NotebookPane })));
+const EvernoteImportGuidePane = lazy(() =>
+  import("./EvernoteImportGuidePane").then((module) => ({ default: module.EvernoteImportGuidePane }))
+);
 const TagsDialog = lazy(() => import("./dialogs/TagsDialog").then((module) => ({ default: module.TagsDialog })));
 const TemplatesDialog = lazy(() => import("./dialogs/TemplatesDialog").then((module) => ({ default: module.TemplatesDialog })));
 
@@ -471,7 +474,7 @@ export const WorkspaceApp = ({
   const [appNoticeDialog, setAppNoticeDialog] = useState<AppNoticeDialogState | null>(null);
   const [multiSelectKeyDown, setMultiSelectKeyDown] = useState(false);
   const [imageCompressionEnabled, setImageCompressionEnabled] = useState(readImageCompressionPreference);
-  const [rightView, setRightView] = useState<"editor" | "settings" | "assets">(() =>
+  const [rightView, setRightView] = useState<"editor" | "settings" | "assets" | "evernote-migration">(() =>
     isInitialSettingsRoute ? "settings" : "editor"
   );
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -1721,7 +1724,7 @@ export const WorkspaceApp = ({
 
   const shouldRenderRightPane = isDesktop || activePane === "editor";
   const rightPaneLoadingLabel =
-    rightView === "settings" ? "正在加载个人中心" : rightView === "assets" ? "正在加载资源库" : "正在加载编辑器";
+    rightView === "settings" ? "正在加载个人中心" : rightView === "assets" ? "正在加载资源库" : rightView === "evernote-migration" ? "正在加载迁移指引" : "正在加载编辑器";
   const pullToRefreshVisible = pullToRefreshDistance > 0 || isPullRefreshing;
   const pullToRefreshReady = pullToRefreshDistance >= PULL_TO_REFRESH_TRIGGER_PX;
   const pullToRefreshLabel = isPullRefreshing
@@ -1941,9 +1944,12 @@ export const WorkspaceApp = ({
                     onLogout={onLogout}
                     isLoggingOut={isLoggingOut}
                     authRequired={authRequired}
+                    onShowGuide={() => setRightView("evernote-migration")}
                   />
                 ) : rightView === "assets" ? (
                   <AssetsPane onClose={handleCloseAssets} />
+                ) : rightView === "evernote-migration" ? (
+                  <EvernoteImportGuidePane onClose={() => setRightView("settings")} />
                 ) : (
                   <EditorPane
                     memo={selectedMemo}
