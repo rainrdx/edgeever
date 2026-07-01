@@ -54,6 +54,28 @@ const ToolbarDivider = () => <div className="h-6 w-px shrink-0 bg-slate-200" />;
 const isToolbarEditorReady = (editor: Editor | null): editor is Editor =>
   Boolean(editor && !editor.isDestroyed && (editor as { extensionManager?: unknown }).extensionManager);
 
+const toggleCodeBlock = (editor: Editor) => {
+  const { from, to, empty } = editor.state.selection;
+  const selectedText = editor.state.doc.textBetween(from, to, "\n", "\n");
+
+  if (empty || !selectedText.includes("\n")) {
+    editor.chain().focus().toggleCodeBlock().run();
+    return;
+  }
+
+  editor
+    .chain()
+    .focus()
+    .insertContentAt(
+      { from, to },
+      {
+        type: "codeBlock",
+        content: selectedText ? [{ type: "text", text: selectedText }] : undefined,
+      }
+    )
+    .run();
+};
+
 export const EditorToolbar = ({ editor, readOnly }: { editor: Editor | null; readOnly: boolean }) => {
   const editorReady = isToolbarEditorReady(editor);
   const disabled = readOnly || !editorReady;
@@ -223,7 +245,7 @@ export const EditorToolbar = ({ editor, readOnly }: { editor: Editor | null; rea
           title="代码块"
           active={isActive("codeBlock")}
           disabled={disabled}
-          onClick={() => run((current) => current.chain().focus().toggleCodeBlock().run())}
+          onClick={() => run(toggleCodeBlock)}
         >
           <SquareCode className="h-4 w-4" />
         </EditorToolbarButton>
