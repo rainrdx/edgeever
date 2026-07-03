@@ -592,6 +592,7 @@ export const WorkspaceApp = ({
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const isPullRefreshingRef = useRef(false);
   const skipNextHomeRouteSyncRef = useRef(false);
+  const abandonedPendingMemoIdsRef = useRef<Set<string>>(new Set());
 
   const [mobileListActionsOpen, setMobileListActionsOpen] = useState(false);
   const [mobileMoveOpen, setMobileMoveOpen] = useState(false);
@@ -708,6 +709,19 @@ export const WorkspaceApp = ({
     setSelectedMemoIds(new Set());
     setMemoSelectionMode(false);
   }, []);
+
+  const clearPendingCreatedMemo = useCallback(
+    (abandon = true) => {
+      if (abandon && pendingCreatedMemo) {
+        abandonedPendingMemoIdsRef.current.add(pendingCreatedMemo.id);
+      }
+
+      setIsOpeningCreatedMemo(false);
+      setPendingCreatedMemo(null);
+      setCreatedMemoPreserveSourceId(null);
+    },
+    [pendingCreatedMemo]
+  );
 
   const replaceMemoSelection = useCallback((memoIds: string[]) => {
     setSelectedMemoIds(new Set(memoIds));
@@ -1089,6 +1103,18 @@ export const WorkspaceApp = ({
       payload: { notebookId: string; title?: string; contentMarkdown?: string; tags?: string[] };
     }) => api.createMemo(payload),
     onSuccess: (data, variables) => {
+      if (abandonedPendingMemoIdsRef.current.has(variables.pendingMemoId)) {
+        abandonedPendingMemoIdsRef.current.delete(variables.pendingMemoId);
+        setIsOpeningCreatedMemo(false);
+        setPendingCreatedMemo(null);
+        setCreatedMemoPreserveSourceId(null);
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["memos"] }),
+          queryClient.invalidateQueries({ queryKey: ["notebooks"] }),
+        ]);
+        return;
+      }
+
       const targetNotebookId =
         selectedNotebookId && selectedNotebookId !== data.memo.notebookId ? data.memo.notebookId : selectedNotebookId;
 
@@ -1600,9 +1626,7 @@ export const WorkspaceApp = ({
     setSelectedNotebookId(notebookId);
     setMobileBottomNavActive("home");
     clearMemoSelection();
-    setIsOpeningCreatedMemo(false);
-    setPendingCreatedMemo(null);
-    setCreatedMemoPreserveSourceId(null);
+    clearPendingCreatedMemo();
     setCreatedMemoEditId(null);
     setCreatedMemoSelectionGuardId(null);
     setMobileNotebookPickerOpen(false);
@@ -1615,9 +1639,7 @@ export const WorkspaceApp = ({
     setSelectedNotebookId(null);
     setMobileBottomNavActive("home");
     clearMemoSelection();
-    setIsOpeningCreatedMemo(false);
-    setPendingCreatedMemo(null);
-    setCreatedMemoPreserveSourceId(null);
+    clearPendingCreatedMemo();
     setCreatedMemoEditId(null);
     setCreatedMemoSelectionGuardId(null);
     setMobileNotebookPickerOpen(false);
@@ -1633,9 +1655,7 @@ export const WorkspaceApp = ({
     setSelectedNotebookId(null);
     setSearch("");
     clearMemoSelection();
-    setIsOpeningCreatedMemo(false);
-    setPendingCreatedMemo(null);
-    setCreatedMemoPreserveSourceId(null);
+    clearPendingCreatedMemo();
     setCreatedMemoEditId(null);
     setCreatedMemoSelectionGuardId(null);
     setActivePane("memos");
@@ -1792,9 +1812,7 @@ export const WorkspaceApp = ({
     }
 
     if (activePane === "editor" || activePane === "notebooks") {
-      setIsOpeningCreatedMemo(false);
-      setPendingCreatedMemo(null);
-      setCreatedMemoPreserveSourceId(null);
+      clearPendingCreatedMemo();
       setActivePane("memos");
       return true;
     }
@@ -2186,9 +2204,7 @@ export const WorkspaceApp = ({
                 setSelectedNotebookId(null);
                 setMobileBottomNavActive("home");
                 clearMemoSelection();
-                setIsOpeningCreatedMemo(false);
-                setPendingCreatedMemo(null);
-                setCreatedMemoPreserveSourceId(null);
+                clearPendingCreatedMemo();
                 setCreatedMemoEditId(null);
                 setCreatedMemoSelectionGuardId(null);
                 setSelectedMemoId(null);
@@ -2197,9 +2213,7 @@ export const WorkspaceApp = ({
               onOpenMemo={(memoId) => {
                 navigateWorkspaceHome();
                 setRightView("editor");
-                setIsOpeningCreatedMemo(false);
-                setPendingCreatedMemo(null);
-                setCreatedMemoPreserveSourceId(null);
+                clearPendingCreatedMemo();
                 setCreatedMemoEditId(null);
                 setCreatedMemoSelectionGuardId(null);
                 setSelectedMemoId(memoId);
@@ -2291,16 +2305,12 @@ export const WorkspaceApp = ({
                     hasNextMemo={Boolean(nextMemoId)}
                     hasPreviousMemo={Boolean(previousMemoId)}
                     onBackToList={() => {
-                      setIsOpeningCreatedMemo(false);
-                      setPendingCreatedMemo(null);
-                      setCreatedMemoPreserveSourceId(null);
+                      clearPendingCreatedMemo();
                       setActivePane("memos");
                     }}
                     onOpenNextMemo={() => {
                       if (nextMemoId) {
-                        setIsOpeningCreatedMemo(false);
-                        setPendingCreatedMemo(null);
-                        setCreatedMemoPreserveSourceId(null);
+                        clearPendingCreatedMemo();
                         setCreatedMemoEditId(null);
                         setCreatedMemoSelectionGuardId(null);
                         setSelectedMemoId(nextMemoId);
@@ -2308,9 +2318,7 @@ export const WorkspaceApp = ({
                     }}
                     onOpenPreviousMemo={() => {
                       if (previousMemoId) {
-                        setIsOpeningCreatedMemo(false);
-                        setPendingCreatedMemo(null);
-                        setCreatedMemoPreserveSourceId(null);
+                        clearPendingCreatedMemo();
                         setCreatedMemoEditId(null);
                         setCreatedMemoSelectionGuardId(null);
                         setSelectedMemoId(previousMemoId);
