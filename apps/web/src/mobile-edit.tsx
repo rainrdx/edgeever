@@ -9,6 +9,7 @@ import "./styles/mobile-markdown-editor.css";
 
 const AUTO_SAVE_DELAY_MS = 1200;
 const LEAVE_SAVE_TIMEOUT_MS = 1600;
+const INITIAL_EDITOR_FOCUS_DELAY_MS = 160;
 const DRAFT_STORAGE_PREFIX = "edgeever-mobile-tiptap-draft:";
 const DEFAULT_MEMO_TITLE = "无标题笔记";
 
@@ -91,6 +92,7 @@ const MobileTiptapEditorApp = () => {
   const leavingRef = useRef(false);
   const savingRef = useRef(false);
   const saveTimerRef = useRef<number | null>(null);
+  const initialFocusTimerRef = useRef<number | null>(null);
   const currentSavePromiseRef = useRef<Promise<boolean> | null>(null);
   const lastSavedSnapshotRef = useRef("");
 
@@ -317,6 +319,31 @@ const MobileTiptapEditorApp = () => {
     scheduleMetadataSave();
   };
 
+  const focusEditorAfterLoad = useCallback(() => {
+    if (!editor) {
+      return;
+    }
+
+    if (initialFocusTimerRef.current !== null) {
+      window.clearTimeout(initialFocusTimerRef.current);
+    }
+
+    initialFocusTimerRef.current = window.setTimeout(() => {
+      initialFocusTimerRef.current = null;
+
+      if (leavingRef.current || editor.isDestroyed) {
+        return;
+      }
+
+      const activeElement = document.activeElement;
+      if (activeElement && activeElement !== document.body && activeElement !== document.documentElement) {
+        return;
+      }
+
+      editor.commands.focus("end");
+    }, INITIAL_EDITOR_FOCUS_DELAY_MS);
+  }, [editor]);
+
   useEffect(() => {
     if (!memoId || !editor) {
       if (!memoId) {
@@ -353,6 +380,7 @@ const MobileTiptapEditorApp = () => {
           dirtyRef.current = true;
           setSaveStateStable("local-draft");
           scheduleMetadataSave();
+          focusEditorAfterLoad();
         } else {
           setTitle(nextTitle);
           titleRef.current = nextTitle;
@@ -367,6 +395,7 @@ const MobileTiptapEditorApp = () => {
           });
           dirtyRef.current = false;
           setSaveStateStable("idle");
+          focusEditorAfterLoad();
         }
       } catch (loadError) {
         if (cancelled) {
@@ -379,8 +408,12 @@ const MobileTiptapEditorApp = () => {
 
     return () => {
       cancelled = true;
+      if (initialFocusTimerRef.current !== null) {
+        window.clearTimeout(initialFocusTimerRef.current);
+        initialFocusTimerRef.current = null;
+      }
     };
-  }, [editor, memoId, readLocalDraft, scheduleMetadataSave, setSaveStateStable]);
+  }, [editor, focusEditorAfterLoad, memoId, readLocalDraft, scheduleMetadataSave, setSaveStateStable]);
 
   useEffect(() => {
     window.history.replaceState({ edgeeverMobileEditor: true }, "");
@@ -412,6 +445,9 @@ const MobileTiptapEditorApp = () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
+      }
+      if (initialFocusTimerRef.current !== null) {
+        window.clearTimeout(initialFocusTimerRef.current);
       }
     };
   }, [leavePage, persistLocalDraft, saveNow]);
