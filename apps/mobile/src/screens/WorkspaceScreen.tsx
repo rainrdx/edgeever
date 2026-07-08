@@ -4231,7 +4231,6 @@ const MoveSelectionModal = ({
   const [targetNotebookId, setTargetNotebookId] = useState("");
   const [searchText, setSearchText] = useState("");
   const notebookOptions = flattenNotebooks(notebooks);
-  const visibleNotebookOptions = filterNotebookOptions(notebookOptions, searchText);
 
   useEffect(() => {
     if (visible) {
@@ -4273,27 +4272,14 @@ const MoveSelectionModal = ({
             ) : null}
           </View>
           <Text style={styles.label}>目标笔记本</Text>
-          {visibleNotebookOptions.map(({ depth, notebook }) => (
-            <Pressable
-              key={notebook.id}
-              onPress={() => setTargetNotebookId(notebook.id)}
-              style={[styles.moveNotebookRow, targetNotebookId === notebook.id && styles.moveNotebookRowActive, depth > 0 && { marginLeft: Math.min(depth * 14, 42) }]}
-            >
-              <View style={styles.moveNotebookText}>
-                <Text numberOfLines={1} style={styles.panelValue}>
-                  {depth > 0 ? `${"· ".repeat(depth)}${notebook.name}` : notebook.name}
-                </Text>
-                <Text style={styles.panelLabel}>{notebook.memoCount} 条笔记</Text>
-              </View>
-              {targetNotebookId === notebook.id ? <Check color="#0f172a" size={18} /> : null}
-            </Pressable>
-          ))}
-          {visibleNotebookOptions.length === 0 ? (
-            <View style={styles.emptyInlinePanel}>
-              <Folder color="#94a3b8" size={28} />
-              <Text style={styles.mutedText}>没有匹配的笔记本</Text>
-            </View>
-          ) : null}
+          <NotebookTreeOptionRows
+            emptyIconSize={28}
+            notebooks={notebooks}
+            onSelect={setTargetNotebookId}
+            options={notebookOptions}
+            searchText={searchText}
+            selectedNotebookId={targetNotebookId}
+          />
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -4393,6 +4379,78 @@ const NotebookParentSelector = ({
   </ScrollView>
 );
 
+const NotebookTreeOptionRows = ({
+  emptyIconSize,
+  notebooks,
+  onSelect,
+  options,
+  searchText,
+  selectedNotebookId,
+}: {
+  emptyIconSize: number;
+  notebooks: Notebook[];
+  onSelect: (notebookId: string) => void;
+  options: NotebookOption[];
+  searchText: string;
+  selectedNotebookId: string;
+}) => {
+  const [collapsedNotebookIds, setCollapsedNotebookIds] = useState<Set<string>>(() => new Set());
+  const searchQuery = searchText.trim();
+  const childNotebookIds = getNotebookParentIdSet(notebooks);
+  const visibleNotebookOptions = searchQuery
+    ? filterNotebookOptions(options, searchText)
+    : filterCollapsedNotebookOptions(options, collapsedNotebookIds);
+
+  const toggleNotebookCollapsed = (notebookId: string) => {
+    setCollapsedNotebookIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(notebookId)) {
+        next.delete(notebookId);
+      } else {
+        next.add(notebookId);
+      }
+
+      return next;
+    });
+  };
+
+  if (visibleNotebookOptions.length === 0) {
+    return (
+      <View style={styles.emptyInlinePanel}>
+        <Folder color="#94a3b8" size={emptyIconSize} />
+        <Text style={styles.mutedText}>没有匹配的笔记本</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.notebookTreeRows}>
+      {visibleNotebookOptions.map(({ depth, notebook }) => (
+        <View
+          key={notebook.id}
+          style={[styles.moveNotebookRow, selectedNotebookId === notebook.id && styles.moveNotebookRowActive, depth > 0 && { marginLeft: Math.min(depth * 14, 42) }]}
+        >
+          {childNotebookIds.has(notebook.id) && !searchQuery ? (
+            <Pressable accessibilityRole="button" onPress={() => toggleNotebookCollapsed(notebook.id)} style={styles.notebookTreeToggle}>
+              {collapsedNotebookIds.has(notebook.id) ? <ChevronRight color="#64748b" size={17} /> : <ChevronDown color="#64748b" size={17} />}
+            </Pressable>
+          ) : (
+            <View style={styles.notebookTreeTogglePlaceholder} />
+          )}
+          <Pressable onPress={() => onSelect(notebook.id)} style={styles.moveNotebookSelectArea}>
+            <Text numberOfLines={1} style={styles.panelValue}>
+              {depth > 0 ? `${"· ".repeat(depth)}${notebook.name}` : notebook.name}
+            </Text>
+            <Text style={styles.panelLabel}>{notebook.memoCount} 条笔记</Text>
+          </Pressable>
+          {selectedNotebookId === notebook.id ? <Check color="#0f172a" size={18} /> : null}
+        </View>
+      ))}
+    </View>
+  );
+};
+
 const NotebookPicker = ({
   notebooks,
   onChange,
@@ -4404,7 +4462,6 @@ const NotebookPicker = ({
 }) => {
   const [searchText, setSearchText] = useState("");
   const notebookOptions = flattenNotebooks(notebooks);
-  const visibleNotebookOptions = filterNotebookOptions(notebookOptions, searchText);
 
   return (
     <View style={styles.notebookPicker}>
@@ -4425,24 +4482,14 @@ const NotebookPicker = ({
           </Pressable>
         ) : null}
       </View>
-      {visibleNotebookOptions.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {visibleNotebookOptions.map(({ depth, notebook }) => (
-            <NotebookPill
-              active={selectedNotebookId === notebook.id}
-              key={notebook.id}
-              label={`${"  ".repeat(depth)}${depth > 0 ? "└ " : ""}${notebook.name}`}
-              memoCount={notebook.memoCount}
-              onPress={() => onChange(notebook.id)}
-            />
-          ))}
-        </ScrollView>
-      ) : (
-        <View style={styles.emptyInlinePanel}>
-          <Folder color="#94a3b8" size={24} />
-          <Text style={styles.mutedText}>没有匹配的笔记本</Text>
-        </View>
-      )}
+      <NotebookTreeOptionRows
+        emptyIconSize={24}
+        notebooks={notebooks}
+        onSelect={onChange}
+        options={notebookOptions}
+        searchText={searchText}
+        selectedNotebookId={selectedNotebookId}
+      />
     </View>
   );
 };
@@ -6310,6 +6357,9 @@ const styles = StyleSheet.create({
   },
   notebookTreeTogglePlaceholder: {
     width: 32,
+  },
+  notebookTreeRows: {
+    gap: 10,
   },
   editorForm: {
     gap: 12,
