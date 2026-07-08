@@ -2511,6 +2511,9 @@ const ApiTokensModal = ({ baseUrl, onClose, visible }: { baseUrl: string; onClos
 
         <ScrollView contentContainerStyle={styles.editorForm}>
           <Text style={styles.sectionSubtitle}>创建远程 MCP 或 API 调用使用的 Bearer Token。</Text>
+          <ActionButton label={copiedValue === "example-config" ? "已复制示例" : "复制示例配置"} onPress={() => copyText(buildMcpRemoteConfig(baseUrl, "YOUR_TOKEN_HERE"), "example-config")}>
+            <Copy color="#0f172a" size={16} />
+          </ActionButton>
 
           {createdToken ? (
             <View style={styles.createdTokenPanel}>
