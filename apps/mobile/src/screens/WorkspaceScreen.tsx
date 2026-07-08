@@ -1611,6 +1611,18 @@ const CreateMemoModal = ({
     },
   });
 
+  const pasteClipboardText = async () => {
+    const text = await Clipboard.getStringAsync();
+
+    if (!text.trim()) {
+      return;
+    }
+
+    const next = insertPlainText(contentMarkdown, contentSelection, text);
+    setContentMarkdown(next.value);
+    setContentSelection(next.selection);
+  };
+
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible={visible}>
       <SafeAreaView style={styles.modalSafeArea}>
@@ -1651,6 +1663,7 @@ const CreateMemoModal = ({
               setContentMarkdown(next.value);
               setContentSelection(next.selection);
             }}
+            onPasteText={() => void pasteClipboardText()}
           />
           <TextInput
             multiline
@@ -3703,6 +3716,18 @@ const EditMemoModal = ({
     setContentSelection({ start: 0, end: 0 });
   };
 
+  const pasteClipboardText = async () => {
+    const text = await Clipboard.getStringAsync();
+
+    if (!text.trim()) {
+      return;
+    }
+
+    const next = insertPlainText(contentMarkdown, contentSelection, text);
+    setContentMarkdown(next.value);
+    setContentSelection(next.selection);
+  };
+
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible={Boolean(memo)}>
       <SafeAreaView style={styles.modalSafeArea}>
@@ -3744,6 +3769,7 @@ const EditMemoModal = ({
               setContentMarkdown(next.value);
               setContentSelection(next.selection);
             }}
+            onPasteText={() => void pasteClipboardText()}
             onUploadImage={() => uploadResourceMutation.mutate()}
           />
           <View style={styles.noteSearchPanel}>
@@ -4202,13 +4228,16 @@ const BottomNavItem = ({ active = false, icon, label, onPress }: { active?: bool
 const MarkdownToolbar = ({
   isUploading = false,
   onAction,
+  onPasteText,
   onUploadImage,
 }: {
   isUploading?: boolean;
   onAction: (action: MarkdownAction) => void;
+  onPasteText?: () => void;
   onUploadImage?: () => void;
 }) => (
   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.markdownToolbar}>
+    {onPasteText ? <MarkdownToolbarButton icon={<Copy color="#334155" size={15} />} label="粘贴" onPress={onPasteText} /> : null}
     {onUploadImage ? (
       <MarkdownToolbarButton disabled={isUploading} icon={<ImagePlus color="#334155" size={15} />} label={isUploading ? "上传中" : "图片"} onPress={onUploadImage} />
     ) : null}
@@ -4351,6 +4380,18 @@ const insertResourceMarkdown = (
   const replacement = `${separatorBefore}${markdown}${separatorAfter}`;
   const nextValue = replaceRange(value, start, end, replacement);
   const nextPosition = start + replacement.length;
+
+  return {
+    value: nextValue,
+    selection: { start: nextPosition, end: nextPosition },
+  };
+};
+
+const insertPlainText = (value: string, selection: TextSelection, text: string) => {
+  const start = Math.max(0, Math.min(selection.start, value.length));
+  const end = Math.max(start, Math.min(selection.end, value.length));
+  const nextValue = replaceRange(value, start, end, text);
+  const nextPosition = start + text.length;
 
   return {
     value: nextValue,
