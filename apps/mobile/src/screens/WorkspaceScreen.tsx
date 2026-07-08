@@ -3527,7 +3527,7 @@ const EditMemoModal = ({
 
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
-        multiple: false,
+        multiple: true,
         type: "image/*",
       });
 
@@ -3535,29 +3535,38 @@ const EditMemoModal = ({
         return null;
       }
 
-      const asset = result.assets[0];
+      const assets = result.assets.filter((asset) => asset.uri);
 
-      if (!asset?.uri) {
+      if (assets.length === 0) {
         throw new Error("没有选择图片");
       }
 
-      const form = new FormData();
-      const uploadAsset = await prepareUploadAsset(asset, imageCompressionEnabled);
-      form.append("file", uploadAsset as unknown as Blob);
+      const uploadedResources = [];
 
-      const { resource } = await client.uploadMemoResource(memo.id, form);
-      return {
-        filename: resource.filename || uploadAsset.name || asset.name || "image",
-        kind: resource.kind,
-        url: resource.url,
-      };
+      for (const asset of assets) {
+        const form = new FormData();
+        const uploadAsset = await prepareUploadAsset(asset, imageCompressionEnabled);
+        form.append("file", uploadAsset as unknown as Blob);
+
+        const { resource } = await client.uploadMemoResource(memo.id, form);
+        uploadedResources.push({
+          filename: resource.filename || uploadAsset.name || asset.name || "image",
+          kind: resource.kind,
+          url: resource.url,
+        });
+      }
+
+      return uploadedResources;
     },
-    onSuccess: (resource) => {
-      if (!resource) {
+    onSuccess: (resources) => {
+      if (!resources || resources.length === 0) {
         return;
       }
 
-      const next = insertResourceMarkdown(contentMarkdown, contentSelection, resource);
+      const next = resources.reduce(
+        (draft, resource) => insertResourceMarkdown(draft.value, draft.selection, resource),
+        { value: contentMarkdown, selection: contentSelection }
+      );
       setContentMarkdown(next.value);
       setContentSelection(next.selection);
     },
