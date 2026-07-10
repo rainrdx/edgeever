@@ -235,7 +235,9 @@ const parseImageWidth = (value: unknown) => {
 
 const ResizableImageNodeView = ({ editor, node, selected, updateAttributes }: NodeViewProps) => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const width = parseImageWidth(node.attrs.width) ?? DEFAULT_IMAGE_WIDTH_PERCENT;
+  const [previewWidth, setPreviewWidth] = useState<number | null>(null);
+  const nodeWidth = parseImageWidth(node.attrs.width) ?? DEFAULT_IMAGE_WIDTH_PERCENT;
+  const width = previewWidth ?? nodeWidth;
   const editable = editor.isEditable;
   const alt = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
   const title = typeof node.attrs.title === "string" ? node.attrs.title : "";
@@ -268,24 +270,32 @@ const ResizableImageNodeView = ({ editor, node, selected, updateAttributes }: No
         return;
       }
 
-      const updateFromPointer = (clientX: number) => {
+      let pendingWidth = nodeWidth;
+      const previewFromPointer = (clientX: number) => {
         const wrapperLeft = wrapper.getBoundingClientRect().left;
-        updateWidth(((clientX - wrapperLeft) / parentWidth) * 100);
+        pendingWidth = clampImageWidth(((clientX - wrapperLeft) / parentWidth) * 100);
+        setPreviewWidth(pendingWidth);
       };
 
-      const handlePointerMove = (moveEvent: PointerEvent) => updateFromPointer(moveEvent.clientX);
-      const stopResize = () => {
+      const handlePointerMove = (moveEvent: PointerEvent) => previewFromPointer(moveEvent.clientX);
+      const stopResize = (commit: boolean) => {
         window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", stopResize);
-        window.removeEventListener("pointercancel", stopResize);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerCancel);
+        setPreviewWidth(null);
+        if (commit && pendingWidth !== nodeWidth) {
+          updateWidth(pendingWidth);
+        }
       };
+      const handlePointerUp = () => stopResize(true);
+      const handlePointerCancel = () => stopResize(false);
 
       window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", stopResize);
-      window.addEventListener("pointercancel", stopResize);
-      updateFromPointer(event.clientX);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerCancel);
+      previewFromPointer(event.clientX);
     },
-    [editable, updateWidth]
+    [editable, nodeWidth, updateWidth]
   );
 
   return (
@@ -1092,6 +1102,7 @@ const RichEditorPane = ({
   const noteSearchInputRef = useRef<HTMLInputElement | null>(null);
   const noteReplaceInputRef = useRef<HTMLInputElement | null>(null);
   const hydratingRef = useRef(false);
+  const hydratedMemoIdRef = useRef<string | null>(null);
   const hasUnsavedChangesRef = useRef(false);
   const editingMemoIdRef = useRef<string | null>(memo?.id ?? null);
   const imageCompressionEnabledRef = useRef(imageCompressionEnabled);
@@ -1514,7 +1525,12 @@ const RichEditorPane = ({
 
   const markDirty = useCallback(() => {
     const currentMemo = memoRef.current;
-    if (hydratingRef.current || currentMemo?.isDeleted) {
+    if (
+      hydratingRef.current ||
+      currentMemo?.isDeleted ||
+      !currentMemo ||
+      hydratedMemoIdRef.current !== currentMemo.id
+    ) {
       return;
     }
 
@@ -1556,6 +1572,7 @@ const RichEditorPane = ({
 
     if (!memo) {
       memoRef.current = null;
+      hydratedMemoIdRef.current = null;
       editingMemoIdRef.current = null;
       hasUnsavedChangesRef.current = false;
       setHasUnsavedChanges(false);
@@ -1572,6 +1589,10 @@ const RichEditorPane = ({
 
     const sameMemo = editingMemoIdRef.current === memo.id;
     memoRef.current = memo;
+
+    if (!sameMemo) {
+      hydratedMemoIdRef.current = null;
+    }
 
     if (sameMemo && hasUnsavedChangesRef.current && !memo.isDeleted) {
       return;
@@ -1611,6 +1632,8 @@ const RichEditorPane = ({
       if (isEditorReady(currentEditor)) {
         currentEditor.commands.setContent(nextContent);
       }
+
+      hydratedMemoIdRef.current = memo.id;
 
       window.setTimeout(() => {
         hydratingRef.current = false;
@@ -1696,7 +1719,7 @@ const RichEditorPane = ({
       const currentMemo = memoRef.current;
       const contentJson = getCurrentContentJson();
 
-      if (!currentMemo || !contentJson) {
+      if (!currentMemo || !contentJson || hydratedMemoIdRef.current !== currentMemo.id) {
         throw new Error("No memo selected");
       }
 

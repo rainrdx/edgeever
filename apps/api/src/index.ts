@@ -8,6 +8,7 @@ import {
   DeleteMemosSchema,
   LoginSchema,
   markdownToDoc,
+  isSuspiciousMemoOverwrite,
   MemoCreateSchema,
   MemoUpdateSchema,
   MergeMemosSchema,
@@ -1534,6 +1535,20 @@ const updateMemoFromInput = async (c: AppContext, id: string, input: MemoUpdateI
   const contentText = docToText(contentJson);
   const title =
     input.title !== undefined ? normalizeMemoTitle(input.title) : normalizeMemoTitle(current.title);
+  if (
+    !input.allowDestructiveOverwrite &&
+    isSuspiciousMemoOverwrite(current.title, current.content_text, title, contentText)
+  ) {
+    return c.json(
+      {
+        error: {
+          code: "suspicious_memo_overwrite",
+          message: "Save blocked because the title changed while most of the note content disappeared.",
+        },
+      },
+      409
+    );
+  }
   const tags = input.tags === undefined ? parseJsonArray(current.tags_json) : normalizeTags(input.tags);
   const excerpt = createExcerpt(contentText);
   const notebookId = input.notebookId ?? current.notebook_id;
@@ -4436,6 +4451,7 @@ const updateMemoRecord = async (
     tags?: string[];
     createdAt?: string;
     updatedAt?: string;
+    allowDestructiveOverwrite?: boolean;
   },
   actor: { actorType: "user" | "agent"; actorId: string | null },
   actorLabel: string
@@ -4505,6 +4521,15 @@ const updateMemoRecord = async (
   const contentText = docToText(contentJson);
   const title =
     input.title !== undefined ? normalizeMemoTitle(input.title) : normalizeMemoTitle(current.title);
+  if (
+    !input.allowDestructiveOverwrite &&
+    isSuspiciousMemoOverwrite(current.title, current.content_text, title, contentText)
+  ) {
+    return {
+      error: "suspicious_memo_overwrite",
+      message: "Save blocked because the title changed while most of the note content disappeared.",
+    };
+  }
   const tags = input.tags === undefined ? parseJsonArray(current.tags_json) : normalizeTags(input.tags);
   const excerpt = createExcerpt(contentText);
   const notebookId = input.notebookId ?? current.notebook_id;

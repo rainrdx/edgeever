@@ -30,6 +30,7 @@ export const MemoUpdateSchema = z.object({
   tags: z.array(z.string()).optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
+  allowDestructiveOverwrite: z.boolean().optional(),
 });
 
 export const MoveMemosSchema = z.object({
