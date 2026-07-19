@@ -2116,9 +2116,9 @@ const SettingsView = ({
     }
     if (activeTab === "ai") {
       return (
-        <View style={styles.settingsDetailList}>
-          <AdvancedPlayCard />
-          <ApiTokensContent active baseUrl={baseUrl} />
+        <View style={styles.settingsGroup}>
+          <AdvancedPlayCard embedded />
+          <ApiTokensContent active baseUrl={baseUrl} embedded />
         </View>
       );
     }
@@ -3244,11 +3244,11 @@ const TagsManagerModal = ({ onClose, visible }: { onClose: () => void; visible: 
   );
 };
 
-const ApiTokensContent = ({ active, baseUrl }: { active: boolean; baseUrl: string }) => {
+const ApiTokensContent = ({ active, baseUrl, embedded = false }: { active: boolean; baseUrl: string; embedded?: boolean }) => {
   const { client } = useSession();
   const { translate } = useMobileLocale();
   const queryClient = useQueryClient();
-  const [name, setName] = useState("MCP Agent");
+  const [name, setName] = useState("MCP Token 1");
   const [nameDefaultsSynced, setNameDefaultsSynced] = useState(false);
   const [selectedScopes, setSelectedScopes] = useState<Set<string>>(() => new Set(ALL_TOKEN_SCOPES));
   const [scopeDefaultsSynced, setScopeDefaultsSynced] = useState(false);
@@ -3367,25 +3367,19 @@ const ApiTokensContent = ({ active, baseUrl }: { active: boolean; baseUrl: strin
   };
 
   return (
-    <View style={styles.settingsGroup}>
-      <View style={styles.settingsInlineCardHeader}>
-        <View style={styles.settingsLinkCopy}>
-          <View style={styles.settingsGroupHeader}>
-            <KeyRound color="#047857" size={16} />
-            <Text style={styles.settingsGroupTitle}>生成 MCP 配置</Text>
-          </View>
-          <Text style={styles.settingsLinkDescription}>让 AI Agent 可以读取和整理你的笔记。</Text>
+    <View style={[styles.settingsGroup, embedded && styles.settingsAiEmbeddedCard]}>
+      <View style={styles.mcpCardHeader}>
+        <View style={styles.mcpCardTitleRow}>
+          <KeyRound color="#047857" size={16} />
+          <Text style={styles.settingsGroupTitle}>生成 MCP 配置</Text>
+          <Pressable accessibilityRole="button" onPress={() => setExampleOpen(true)} style={styles.mcpExampleButton}>
+            <Text style={styles.mcpExampleButtonText}>使用示例</Text>
+          </Pressable>
         </View>
-        <IconButton accessibilityLabel="刷新 Token" onPress={() => tokensQuery.refetch()}>
-          {tokensQuery.isFetching ? <ActivityIndicator color="#0f172a" /> : <RefreshCw color="#0f172a" size={18} />}
-        </IconButton>
+        <Text style={styles.mcpCardDescription}>让 AI Agent 可以读取和整理你的笔记。</Text>
       </View>
 
-      <View style={styles.settingsAccordionContent}>
-          <ActionButton label="使用示例" onPress={() => setExampleOpen(true)}>
-            <Copy color="#0f172a" size={16} />
-          </ActionButton>
-
+      <View style={styles.mcpCardContent}>
           {createdToken ? (
             <View style={styles.createdTokenPanel}>
               <View style={styles.assetsSummary}>
@@ -3407,7 +3401,32 @@ const ApiTokensContent = ({ active, baseUrl }: { active: boolean; baseUrl: strin
             </View>
           ) : null}
 
-          <TextInput onChangeText={setName} placeholder="Token 名称，例如：Codex 或 Claude Code" placeholderTextColor="#94a3b8" style={styles.titleInput} value={name} />
+          <TextInput
+            accessibilityLabel={translate("Token 名称")}
+            editable={!createTokenMutation.isPending}
+            maxLength={80}
+            onChangeText={setName}
+            onSubmitEditing={() => {
+              if (name.trim() && selectedScopes.size > 0 && !createTokenMutation.isPending) {
+                createTokenMutation.mutate();
+              }
+            }}
+            placeholder="Token 名称，例如：Codex 或 Claude Code"
+            placeholderTextColor="#94a3b8"
+            returnKeyType="done"
+            style={styles.mcpNameInput}
+            value={name}
+          />
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={createTokenMutation.isPending || !name.trim() || selectedScopes.size === 0}
+            onPress={() => createTokenMutation.mutate()}
+            style={[styles.mcpGenerateButton, (createTokenMutation.isPending || !name.trim() || selectedScopes.size === 0) && styles.buttonDisabled]}
+          >
+            {createTokenMutation.isPending ? <ActivityIndicator color="#ffffff" size="small" /> : <Plus color="#ffffff" size={16} />}
+            <Text style={styles.mcpGenerateButtonText}>{createTokenMutation.isPending ? "正在创建..." : "生成 Token"}</Text>
+          </Pressable>
 
           <Pressable accessibilityState={{ expanded: scopesExpanded }} onPress={() => setScopesExpanded((value) => !value)} style={styles.tokenScopeHeader}>
             <View>
@@ -3421,21 +3440,21 @@ const ApiTokensContent = ({ active, baseUrl }: { active: boolean; baseUrl: strin
               const selected = selectedScopes.has(scope);
 
               return (
-                <Pressable key={scope} onPress={() => toggleScope(scope)} style={[styles.scopePill, selected && styles.scopePillActive]}>
-                  <Text style={[styles.scopePillText, selected && styles.scopePillTextActive]}>{translate(getTokenScopeLabel(scope))}</Text>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  key={scope}
+                  onPress={() => toggleScope(scope)}
+                  style={[styles.scopeOption, selected && styles.scopeOptionSelected]}
+                >
+                  <View style={[styles.scopeCheckbox, selected && styles.scopeCheckboxSelected]}>
+                    {selected ? <Check color="#ffffff" size={12} /> : null}
+                  </View>
+                  <Text numberOfLines={1} style={[styles.scopeOptionText, selected && styles.scopeOptionTextSelected]}>{translate(getTokenScopeLabel(scope))}</Text>
                 </Pressable>
               );
             })}
           </View> : null}
-
-          <Pressable
-            disabled={createTokenMutation.isPending}
-            onPress={() => createTokenMutation.mutate()}
-            style={[styles.uploadButton, createTokenMutation.isPending && styles.buttonDisabled]}
-          >
-            {createTokenMutation.isPending ? <ActivityIndicator color="#ffffff" /> : <Plus color="#ffffff" size={18} />}
-            <Text style={styles.uploadButtonText}>{createTokenMutation.isPending ? "正在创建..." : "生成 Token"}</Text>
-          </Pressable>
           {createTokenMutation.error ? (
             <Text style={styles.errorText}>{createTokenMutation.error instanceof Error ? createTokenMutation.error.message : "创建失败"}</Text>
           ) : null}
@@ -3446,10 +3465,7 @@ const ApiTokensContent = ({ active, baseUrl }: { active: boolean; baseUrl: strin
               <ActivityIndicator color="#0f172a" />
             </View>
           ) : tokens.length === 0 ? (
-            <View style={styles.emptyInlinePanel}>
-              <KeyRound color="#94a3b8" size={28} />
-              <Text style={styles.mutedText}>暂无 API Token</Text>
-            </View>
+            <Text style={styles.apiTokenEmptyText}>暂无 API Token</Text>
           ) : (
             tokens.map((token) => (
               <ApiTokenRow
@@ -3527,31 +3543,55 @@ const ApiTokenRow = ({
 
   return (
     <View style={[styles.apiTokenRow, token.isRevoked && styles.buttonDisabled]}>
-      <View style={styles.notebookManageText}>
-        <Text numberOfLines={1} style={styles.panelValue}>
+      <View style={styles.apiTokenText}>
+        <Text numberOfLines={1} style={styles.apiTokenName}>
           {token.name}
         </Text>
-        <Text numberOfLines={2} style={styles.panelLabel}>
+        <Text numberOfLines={1} style={styles.apiTokenScopes}>
           {token.scopes.map((scope) => translate(getTokenScopeLabel(scope))).join(resolvedLocale === "en-US" ? ", " : "、") || translate("无权限")}
         </Text>
-        <Text style={styles.panelLabel}>{token.lastUsedAt ? `上次调用时间：${formatDate(token.lastUsedAt, localePreference)}` : "从未被调用"}</Text>
+        <Text style={styles.apiTokenMeta}>
+          {translate(token.lastUsedAt ? `上次调用时间：${formatDate(token.lastUsedAt, localePreference)}` : "从未被调用")}
+          {!token.token ? ` · ${translate("旧 Token 无法找回明文，请重新生成")}` : ""}
+        </Text>
       </View>
       <View style={styles.apiTokenActions}>
-        <IconButton accessibilityLabel={canCopyToken ? "复制 Token" : "旧 Token 无法复制"} disabled={!canCopyToken} onPress={() => token.token && onCopy(token.token, tokenCopyLabel)}>
+        <Pressable
+          accessibilityLabel={canCopyToken ? "复制 Token" : "旧 Token 无法复制"}
+          accessibilityRole="button"
+          disabled={!canCopyToken}
+          onPress={() => token.token && onCopy(token.token, tokenCopyLabel)}
+          style={[styles.apiTokenActionButton, !canCopyToken && styles.buttonDisabled]}
+        >
           {copiedValue === tokenCopyLabel ? <ShieldCheck color="#047857" size={18} /> : <Copy color={canCopyToken ? "#0f172a" : "#cbd5e1"} size={18} />}
-        </IconButton>
-        <IconButton accessibilityLabel={canCopyToken ? "复制完整 MCP 配置" : "旧 Token 无法复制 MCP 配置"} disabled={!canCopyToken} onPress={() => token.token && onCopy(buildMcpRemoteConfig(baseUrl, token.token), configCopyLabel)}>
+          <Text style={styles.apiTokenActionText}>{copiedValue === tokenCopyLabel ? "已复制" : "复制 Token"}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel={canCopyToken ? "复制完整 MCP 配置" : "旧 Token 无法复制 MCP 配置"}
+          accessibilityRole="button"
+          disabled={!canCopyToken}
+          onPress={() => token.token && onCopy(buildMcpRemoteConfig(baseUrl, token.token), configCopyLabel)}
+          style={[styles.apiTokenActionButton, !canCopyToken && styles.buttonDisabled]}
+        >
           {copiedValue === configCopyLabel ? <ShieldCheck color="#047857" size={18} /> : <KeyRound color={canCopyToken ? "#0f172a" : "#cbd5e1"} size={18} />}
-        </IconButton>
-        <IconButton accessibilityLabel="删除 Token" onPress={() => !isDeleting && onDelete(token)}>
+          <Text style={styles.apiTokenActionText}>{copiedValue === configCopyLabel ? "已复制" : "复制完整 MCP 配置"}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="删除 Token"
+          accessibilityRole="button"
+          disabled={isDeleting}
+          onPress={() => onDelete(token)}
+          style={[styles.apiTokenActionButton, styles.apiTokenDeleteButton, isDeleting && styles.buttonDisabled]}
+        >
           <Trash2 color="#b91c1c" size={18} />
-        </IconButton>
+          <Text style={styles.apiTokenDeleteText}>删除 Token</Text>
+        </Pressable>
       </View>
     </View>
   );
 };
 
-const AdvancedPlayCard = () => {
+const AdvancedPlayCard = ({ embedded = false }: { embedded?: boolean }) => {
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const localePreference = useMobileLocalePreference();
@@ -3564,7 +3604,7 @@ const AdvancedPlayCard = () => {
   };
 
   return (
-    <View style={styles.settingsGroup}>
+    <View style={[styles.settingsGroup, embedded && styles.settingsAiEmbeddedCardFirst]}>
       <Pressable accessibilityState={{ expanded }} onPress={() => setExpanded((value) => !value)} style={styles.settingsAccordionHeader}>
         <View style={styles.settingsLinkCopy}>
           <View style={styles.settingsGroupHeader}>
@@ -7152,6 +7192,18 @@ const baseWorkspaceStyles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
+  settingsAiEmbeddedCardFirst: {
+    borderRadius: 0,
+    borderWidth: 0,
+  },
+  settingsAiEmbeddedCard: {
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    borderRadius: 0,
+    borderRightWidth: 0,
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+  },
   settingsEmbeddedSection: {
     borderBottomWidth: 0,
     borderLeftWidth: 0,
@@ -7254,6 +7306,67 @@ const baseWorkspaceStyles = StyleSheet.create({
     maxWidth: 620,
     padding: 16,
     width: "100%",
+  },
+  mcpCardHeader: {
+    gap: 4,
+    padding: 16,
+  },
+  mcpCardTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  mcpCardDescription: {
+    color: "#64748b",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  mcpExampleButton: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 6,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  mcpExampleButtonText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  mcpCardContent: {
+    gap: 12,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+  },
+  mcpNameInput: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 6,
+    borderWidth: 1,
+    color: "#0f172a",
+    fontSize: 12,
+    height: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
+  },
+  mcpGenerateButton: {
+    alignItems: "center",
+    backgroundColor: "#10b981",
+    borderRadius: 6,
+    flexDirection: "row",
+    gap: 8,
+    height: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  mcpGenerateButtonText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "700",
   },
   settingsLinkCopy: {
     flex: 1,
@@ -8948,9 +9061,7 @@ const baseWorkspaceStyles = StyleSheet.create({
     gap: 8,
   },
   scopeGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+    gap: 4,
   },
   tokenScopeHeader: {
     alignItems: "center",
@@ -8960,44 +9071,113 @@ const baseWorkspaceStyles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 52,
+    minHeight: 44,
     paddingVertical: 8,
   },
-  scopePill: {
-    backgroundColor: "#ffffff",
-    borderColor: "#e2e8f0",
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 34,
-    paddingHorizontal: 10,
+  scopeOption: {
+    alignItems: "center",
+    borderRadius: 6,
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 40,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  scopePillActive: {
+  scopeOptionSelected: {
     backgroundColor: "#ecfdf5",
-    borderColor: "#34d399",
   },
-  scopePillText: {
+  scopeCheckbox: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#6ee7b7",
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: "center",
+    width: 18,
+  },
+  scopeCheckboxSelected: {
+    backgroundColor: "#10b981",
+    borderColor: "#10b981",
+  },
+  scopeOptionText: {
     color: "#475569",
+    flex: 1,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "600",
   },
-  scopePillTextActive: {
+  scopeOptionTextSelected: {
     color: "#047857",
   },
   apiTokenRow: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    gap: 12,
+    minHeight: 64,
+    paddingVertical: 12,
+  },
+  apiTokenText: {
+    minWidth: 0,
+  },
+  apiTokenName: {
+    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  apiTokenScopes: {
+    alignSelf: "flex-start",
+    backgroundColor: "#f8fafc",
+    borderColor: "#f1f5f9",
+    borderRadius: 6,
+    borderWidth: 1,
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 8,
+    maxWidth: "100%",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  apiTokenMeta: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "500",
+    lineHeight: 16,
+    marginTop: 8,
+  },
+  apiTokenActions: {
+    gap: 8,
+  },
+  apiTokenActionButton: {
     alignItems: "center",
     backgroundColor: "#ffffff",
     borderColor: "#e2e8f0",
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 10,
-    minHeight: 82,
-    padding: 12,
+    gap: 8,
+    height: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12,
   },
-  apiTokenActions: {
-    flexDirection: "row",
-    gap: 6,
+  apiTokenActionText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  apiTokenDeleteButton: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+  },
+  apiTokenDeleteText: {
+    color: "#b91c1c",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  apiTokenEmptyText: {
+    color: "#94a3b8",
+    fontSize: 14,
+    paddingVertical: 16,
   },
   centerInline: {
     alignItems: "center",
