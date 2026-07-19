@@ -112,6 +112,7 @@ import {
   resolveLocalMemo,
   syncMobileLocalMirror,
   upsertLocalMemo,
+  type MobileBootstrapProgress,
 } from "../lib/local-mirror";
 import { AccountSecurityPanel } from "./AccountSecurityModal";
 import { beginEditorStartup, markStartup, recordEditorStartup } from "../lib/startup-performance";
@@ -259,6 +260,10 @@ export const WorkspaceScreen = () => {
   const [selectedMemoIds, setSelectedMemoIds] = useState<Set<string>>(() => new Set());
   const [selectionMoveOpen, setSelectionMoveOpen] = useState(false);
   const [selectionMoreOpen, setSelectionMoreOpen] = useState(false);
+  const [isInitialMirrorStatusPending, setIsInitialMirrorStatusPending] = useState(true);
+  const [initialMirrorSyncProgress, setInitialMirrorSyncProgress] = useState<MobileBootstrapProgress | null>(null);
+  const [initialMirrorSyncError, setInitialMirrorSyncError] = useState<unknown>(null);
+  const [mirrorSyncAttempt, setMirrorSyncAttempt] = useState(0);
   const autoSyncRunningRef = useRef(false);
   const autoSyncRequestedRef = useRef(false);
   const autoSyncRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -272,9 +277,6 @@ export const WorkspaceScreen = () => {
         throw new Error("Client is not ready");
       }
 
-      if (!(await isMobileLocalMirrorInitialized(dataScope))) {
-        await syncMobileLocalMirror(client, dataScope);
-      }
       return listLocalNotebooks(dataScope);
     },
     enabled: Boolean(client),
@@ -293,10 +295,6 @@ export const WorkspaceScreen = () => {
     queryFn: async ({ pageParam }) => {
       if (!client) {
         throw new Error("Client is not ready");
-      }
-
-      if (pageParam === 0 && !(await isMobileLocalMirrorInitialized(dataScope))) {
-        await syncMobileLocalMirror(client, dataScope);
       }
 
       return listLocalMemos(dataScope, {
@@ -960,17 +958,46 @@ export const WorkspaceScreen = () => {
     }
     let active = true;
     const syncMirror = async () => {
+      let isInitialSync = false;
+      let refreshedNotebooksDuringBootstrap = false;
       try {
-        await syncMobileLocalMirror(client, dataScope);
+        isInitialSync = !(await isMobileLocalMirrorInitialized(dataScope));
+        if (active) {
+          setIsInitialMirrorStatusPending(false);
+          setInitialMirrorSyncError(null);
+          setInitialMirrorSyncProgress(isInitialSync ? { loadedCount: 0, totalCount: 0 } : null);
+        }
+        await syncMobileLocalMirror(client, dataScope, {
+          onBootstrapProgress: isInitialSync ? async (progress) => {
+            if (!active) {
+              return;
+            }
+            setInitialMirrorSyncProgress(progress);
+            const invalidations = [
+              queryClient.invalidateQueries({ queryKey: ["mobile", "memos"] }),
+              queryClient.invalidateQueries({ queryKey: ["mobile", "search"] }),
+            ];
+            if (!refreshedNotebooksDuringBootstrap) {
+              refreshedNotebooksDuringBootstrap = true;
+              invalidations.push(queryClient.invalidateQueries({ queryKey: ["mobile", "notebooks"] }));
+            }
+            await Promise.all(invalidations);
+          } : undefined,
+        });
         if (active) {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["mobile", "notebooks"] }),
             queryClient.invalidateQueries({ queryKey: ["mobile", "memos"] }),
             queryClient.invalidateQueries({ queryKey: ["mobile", "search"] }),
           ]);
+          setInitialMirrorSyncProgress(null);
         }
-      } catch {
-        // The local mirror remains readable while the device is offline.
+      } catch (error) {
+        if (active && isInitialSync) {
+          setInitialMirrorSyncProgress(null);
+          setInitialMirrorSyncError(error);
+        }
+        // An initialized local mirror remains readable while the device is offline.
       }
     };
     void syncMirror();
@@ -983,7 +1010,7 @@ export const WorkspaceScreen = () => {
       active = false;
       subscription.remove();
     };
-  }, [client, dataScope, queryClient]);
+  }, [client, dataScope, mirrorSyncAttempt, queryClient]);
 
   if (richEditingSession) {
     return <RichEditorModal
@@ -1003,7 +1030,8 @@ export const WorkspaceScreen = () => {
       {activeView === "notes" ? (
         <NotesView
           activeNotebook={activeNotebook}
-          isLoading={notebooksQuery.isLoading || (searchActive ? searchQuery.isLoading : memosQuery.isLoading)}
+          initialSyncProgress={initialMirrorSyncProgress}
+          isLoading={notebooksQuery.isLoading || (searchActive ? searchQuery.isLoading : memosQuery.isLoading) || (isInitialMirrorStatusPending && visibleMemos.length === 0)}
           isLoadingMore={searchActive ? searchQuery.isFetchingNextPage : memosQuery.isFetchingNextPage}
           isRefreshing={isRefreshing}
           memoFilterMode={memoFilterMode}
@@ -1036,8 +1064,13 @@ export const WorkspaceScreen = () => {
             : memosQuery.data?.pages[0]?.totalCount ?? memos.length}
           selectionMode={selectionMode}
           selectedMemoIds={selectedMemoIds}
-          error={notebooksQuery.error ?? (searchActive ? searchQuery.error : memosQuery.error)}
-          isError={notebooksQuery.isError || (searchActive ? searchQuery.isError : memosQuery.isError)}
+          error={initialMirrorSyncError ?? notebooksQuery.error ?? (searchActive ? searchQuery.error : memosQuery.error)}
+          isError={Boolean(initialMirrorSyncError) || notebooksQuery.isError || (searchActive ? searchQuery.isError : memosQuery.isError)}
+          onRetry={() => {
+            setIsInitialMirrorStatusPending(true);
+            setInitialMirrorSyncError(null);
+            setMirrorSyncAttempt((attempt) => attempt + 1);
+          }}
         />
       ) : null}
 
@@ -1233,6 +1266,7 @@ export const WorkspaceScreen = () => {
 const NotesView = ({
   activeNotebook,
   error,
+  initialSyncProgress,
   isError,
   isLoading,
   isLoadingMore,
@@ -1251,6 +1285,7 @@ const NotesView = ({
   onMemoPress,
   onLoadMore,
   onRefresh,
+  onRetry,
   onSearchTextChange,
   onSetMemoView,
   searchText,
@@ -1260,6 +1295,7 @@ const NotesView = ({
 }: {
   activeNotebook: Notebook | null;
   error: unknown;
+  initialSyncProgress: MobileBootstrapProgress | null;
   isError: boolean;
   isLoading: boolean;
   isLoadingMore: boolean;
@@ -1278,6 +1314,7 @@ const NotesView = ({
   onMemoPress: (memoId: string) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
+  onRetry: () => void;
   onSearchTextChange: (value: string) => void;
   onSetMemoView: (memoView: MemoView) => void;
   searchText: string;
@@ -1403,6 +1440,7 @@ const NotesView = ({
       emptyDescription={searchActive ? "换个关键词再试" : memoFilterMode !== "all" ? "试试切换筛选条件，或调整搜索关键词。" : memoView === "trash" ? "删除的笔记会显示在这里。" : "先创建一条笔记，之后可以在这里快速预览、搜索和批量整理。"}
       emptyTitle={searchActive ? "没有找到匹配笔记" : memoFilterMode !== "all" ? "没有符合筛选的笔记" : memoView === "trash" ? "回收站为空" : "暂无笔记"}
       error={error}
+      initialSyncProgress={initialSyncProgress}
       isError={isError}
       isLoading={isLoading}
       isLoadingMore={isLoadingMore}
@@ -1413,7 +1451,7 @@ const NotesView = ({
       onMemoPress={onMemoPress}
       onLoadMore={onLoadMore}
       onRefresh={onRefresh}
-      onRetry={onRefresh}
+      onRetry={onRetry}
       selectionMode={selectionMode}
       selectedMemoIds={selectedMemoIds}
     />
@@ -4573,6 +4611,7 @@ const MemoList = ({
   emptyTitle,
   error,
   isError,
+  initialSyncProgress,
   isLoading,
   isLoadingMore = false,
   isRefreshing,
@@ -4591,6 +4630,7 @@ const MemoList = ({
   emptyTitle: string;
   error?: unknown;
   isError: boolean;
+  initialSyncProgress: MobileBootstrapProgress | null;
   isLoading: boolean;
   isLoadingMore?: boolean;
   isRefreshing: boolean;
@@ -4604,13 +4644,33 @@ const MemoList = ({
   selectionMode?: boolean;
   selectedMemoIds?: Set<string>;
 }) => {
-  if (isLoading) {
+  const localePreference = useMobileLocalePreference();
+  const englishLocale = isEnglishMobileLocale(localePreference);
+  const hasInitialSyncProgress = initialSyncProgress !== null;
+  const loadedCount = initialSyncProgress?.loadedCount ?? 0;
+  const totalCount = initialSyncProgress?.totalCount ?? 0;
+  const progressPercent = totalCount > 0 ? Math.min(100, Math.round((loadedCount / totalCount) * 100)) : 0;
+  const progressTitle = englishLocale ? "Syncing your notes" : "正在同步笔记";
+  const progressDescription = totalCount > 0
+    ? (englishLocale ? `${loadedCount} of ${totalCount} notes loaded` : `已加载 ${loadedCount} / ${totalCount} 条笔记`)
+    : (englishLocale ? "Preparing your notes for the first sync…" : "正在准备首次同步…");
+  const loadingTitle = hasInitialSyncProgress ? progressTitle : (englishLocale ? "Loading notes" : "正在加载笔记");
+  const loadingDescription = hasInitialSyncProgress
+    ? progressDescription
+    : (englishLocale ? "Loading notebooks and notes…" : "正在加载笔记本和笔记…");
+
+  if ((isLoading || hasInitialSyncProgress) && memos.length === 0) {
     return (
-      <View accessibilityLabel="正在加载笔记" accessibilityLiveRegion="polite" style={styles.memoListStateWrap}>
+      <View accessibilityLabel={loadingTitle} accessibilityLiveRegion="polite" style={styles.memoListStateWrap}>
         <View style={styles.memoListLoadingCard}>
           <ActivityIndicator color="#059669" size="large" />
-          <Text style={styles.memoListLoadingTitle}>正在加载笔记</Text>
-          <Text style={styles.memoListLoadingDescription}>正在同步笔记本和笔记，首次登录可能需要一点时间。</Text>
+          <Text style={styles.memoListLoadingTitle}>{loadingTitle}</Text>
+          <Text style={styles.memoListLoadingDescription}>{loadingDescription}</Text>
+          {totalCount > 0 ? (
+            <View style={styles.memoSyncProgressTrack}>
+              <View style={[styles.memoSyncProgressFill, { width: `${progressPercent}%` }]} />
+            </View>
+          ) : null}
         </View>
       </View>
     );
@@ -4667,6 +4727,33 @@ const MemoList = ({
           ) : null}
         </View>
       }
+      ListHeaderComponent={hasInitialSyncProgress ? (
+          <View accessibilityLiveRegion="polite" style={styles.memoSyncBanner}>
+            <ActivityIndicator color="#059669" size="small" />
+            <View style={styles.memoSyncBannerContent}>
+              <Text style={styles.memoSyncBannerTitle}>{progressTitle}</Text>
+              <Text style={styles.memoSyncBannerDescription}>{progressDescription}</Text>
+              <View style={styles.memoSyncProgressTrack}>
+                <View style={[styles.memoSyncProgressFill, { width: `${progressPercent}%` }]} />
+              </View>
+            </View>
+          </View>
+        ) : isError ? (
+          <View accessibilityLiveRegion="polite" style={styles.memoSyncErrorBanner}>
+            <View style={styles.memoSyncBannerContent}>
+              <Text style={styles.memoSyncErrorBannerTitle}>{englishLocale ? "Sync paused" : "同步已暂停"}</Text>
+              <Text style={styles.memoSyncErrorBannerDescription}>
+                {englishLocale ? "Loaded notes remain available. Check your connection and retry." : "已加载的笔记仍可使用，请检查网络后重试。"}
+              </Text>
+            </View>
+            {onRetry ? (
+              <Pressable accessibilityRole="button" onPress={onRetry} style={styles.memoSyncErrorRetryButton}>
+                <RotateCcw color="#92400e" size={15} />
+                <Text style={styles.memoListRetryText}>{englishLocale ? "Retry" : "重试"}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
       ListFooterComponent={isLoadingMore ? <ActivityIndicator color="#0f172a" style={styles.listLoadingFooter} /> : null}
       updateCellsBatchingPeriod={32}
       windowSize={7}
@@ -6538,6 +6625,74 @@ const baseWorkspaceStyles = StyleSheet.create({
     marginTop: 7,
     maxWidth: 300,
     textAlign: "center",
+  },
+  memoSyncBanner: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  memoSyncBannerContent: {
+    flex: 1,
+  },
+  memoSyncBannerTitle: {
+    color: "#065f46",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  memoSyncBannerDescription: {
+    color: "#047857",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  memoSyncProgressTrack: {
+    backgroundColor: "#d1fae5",
+    borderRadius: 999,
+    height: 4,
+    marginTop: 10,
+    overflow: "hidden",
+    width: "100%",
+  },
+  memoSyncProgressFill: {
+    backgroundColor: "#059669",
+    borderRadius: 999,
+    height: "100%",
+  },
+  memoSyncErrorBanner: {
+    alignItems: "center",
+    backgroundColor: "#fffbeb",
+    borderColor: "#fcd34d",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  memoSyncErrorBannerTitle: {
+    color: "#451a03",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  memoSyncErrorBannerDescription: {
+    color: "#92400e",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  memoSyncErrorRetryButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
   },
   memoListErrorCard: {
     alignItems: "center",
