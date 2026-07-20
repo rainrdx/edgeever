@@ -50,9 +50,17 @@ The public demo resets every Monday at 1:00 AM (China Standard Time) and restore
 
 ## Deployment
 
-### Deploy with an AI Agent
+### Manual Deployment (Recommended)
 
-Copy this prompt into your AI coding assistant, such as Claude Code, Codex, OpenClaw, Antigravity, Cursor, or Trae. It covers the first installation and the automatic-update setup:
+Please refer to the [Cloudflare Manual Deployment Guide](docs/manual-deploy.md) for first-time manual installation, Cloudflare resource setup, and emergency recovery. After the first deployment, connect Workers Builds; future updates arrive through GitHub **Sync fork** or pushes to `main`.
+
+The automated helper commands are recommended. The template uses `admin` / `admin123` for the initial login, and the password can be changed later in Personal Settings. If you create the Cloudflare resources manually, finish configuring `.env.local`—including the D1 ID, R2 bucket, and the 400-day session limit—before running `bun run deploy`.
+
+<p align="center">or</p>
+
+### Deploy with an AI Agent (Optional / Experimental)
+
+If you use an AI coding assistant (such as Claude Code, Codex, OpenClaw, Antigravity, Cursor, or Trae) in your daily workflow, you can copy this prompt into it. The assistant will guide you through executing the standard manual deployment commands above and configuring automatic updates:
 
 **Recommendation:** Before deployment, configure GitHub and Cloudflare MCP servers, plugins, or other supported integrations for your AI Agent. This allows it to fork the repository, create the required Cloudflare resources, deploy the application, and connect the instance to Cloudflare Workers Builds.
 
@@ -69,14 +77,6 @@ Agents should follow [AI Agent Cloudflare Deployment](docs/agent-deploy-cloudfla
 After the first deployment, see [Cloudflare Workers Builds](docs/cloudflare-workers-builds.md) for automatic updates. The same deployment flow is used by official instances and forks.
 
 > Common pitfall: Cloudflare R2, D1, and Workers may still require a Visa card during activation or usage, even when you stay within the free quotas.
-
-<p align="center">or</p>
-
-### Manual Deployment
-
-Please refer to the [Cloudflare Manual Deployment Guide](docs/manual-deploy.md) for first-time manual installation, Cloudflare resource setup, and emergency recovery. After the first deployment, connect Workers Builds; future updates arrive through GitHub **Sync fork** or pushes to `main`.
-
-The automated helper commands are recommended. The template uses `admin` / `admin123` for the initial login, and the password can be changed later in Personal Settings. If you create the Cloudflare resources manually, finish configuring `.env.local`—including the D1 ID, R2 bucket, and the 400-day session limit—before running `bun run deploy`.
 
 
 ## Multi-Account Login
